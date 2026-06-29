@@ -59,12 +59,14 @@ export class ActionExecutor {
               const sendData = composeData || pendingComposeFields;
               if (sendData.to && sendData.subject !== undefined && sendData.body !== undefined) {
                 try {
+                  const ccArray = sendData.cc ? (Array.isArray(sendData.cc) ? sendData.cc : [sendData.cc]) : undefined;
+                  const bccArray = sendData.bcc ? (Array.isArray(sendData.bcc) ? sendData.bcc : [sendData.bcc]) : undefined;
                   const messageId = await gmailService.sendEmail(
                     sendData.to,
                     sendData.subject,
                     sendData.body,
-                    sendData.cc,
-                    sendData.bcc
+                    ccArray as string[],
+                    bccArray as string[]
                   );
                   executedActions.push({
                     ...action,

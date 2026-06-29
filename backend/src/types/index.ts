@@ -49,7 +49,7 @@ export interface AppState {
   user?: AuthUser;
 }
 
-export type AIActionType = 'navigate' | 'fillForm' | 'search' | 'submit' | 'message' | 'openEmail';
+export type AIActionType = 'navigate' | 'fillForm' | 'search' | 'submit' | 'message' | 'openEmail' | 'reply' | 'forward' | 'delete' | 'markRead' | 'schedule';
 
 export interface AIAction {
   type: AIActionType;
