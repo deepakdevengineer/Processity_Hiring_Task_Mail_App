@@ -102,58 +102,64 @@ export class GeminiService {
    */
   fallbackParseCommand(userMessage: string, appState: AppState): GeminiResponse {
     const msg = userMessage.toLowerCase().trim();
+    const emailMatch = userMessage.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i);
     
-    // 1. Context-aware direct replies
-    if (msg === 'reply to this' || msg.startsWith('reply to this email') || msg.startsWith('reply to the open email')) {
-      const replyText = userMessage.match(/saying[:\s]+['"]?([^'"]+)['"]?/i)?.[1] || 'Thanks for the email.';
-      return {
-        reasoning: 'Fallback: Context-aware reply command detected.',
-        actions: [
-          { type: 'reply', body: replyText },
-          { type: 'message', text: `Drafted reply saying: "${replyText}"` }
-        ]
-      };
-    }
-    
-    // 2. Reply to latest/last email
-    if (msg.startsWith('reply to the last email') || msg.startsWith('reply to the latest email')) {
-      const replyText = userMessage.match(/saying[:\s]+['"]?([^'"]+)['"]?/i)?.[1] || 'Thanks for the email.';
-      return {
-        reasoning: 'Fallback: Reply to latest email command detected.',
-        actions: [
-          { type: 'search', query: 'is:inbox', filters: {} },
-          { type: 'reply', body: replyText },
-          { type: 'message', text: `Drafting reply to the latest email.` }
-        ]
-      };
-    }
-
-    // 3. Forward email
-    if (msg.startsWith('forward this email to') || msg.startsWith('forward to')) {
-      const toEmail = userMessage.match(/to\s+([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i)?.[1] || '';
+    // 1. Forward email: "forward the recent email to dk78834@gmail.com", "forward this email to boss@company.com"
+    if (msg.includes('forward') && emailMatch) {
+      const toEmail = emailMatch[1];
+      const isRecent = msg.includes('recent') || msg.includes('latest') || msg.includes('last') || !appState.currentEmail;
+      
+      const actions: any[] = [];
+      if (isRecent) {
+        actions.push({ type: 'search', query: 'is:inbox', filters: {} });
+      }
+      actions.push({ type: 'forward', to: toEmail });
+      actions.push({ type: 'message', text: `Drafting forward to ${toEmail}.` });
+      
       return {
         reasoning: 'Fallback: Forward email command detected.',
-        actions: [
-          { type: 'forward', to: toEmail },
-          { type: 'message', text: `Drafting forward to ${toEmail}.` }
-        ]
+        actions
       };
     }
-
-    // 4. Delete active email
-    if (msg === 'delete this' || msg.startsWith('delete this email') || msg.startsWith('delete the open email')) {
+    
+    // 2. Reply to email: "reply to the recent email saying...", "reply to this saying..."
+    if (msg.includes('reply')) {
+      const replyText = userMessage.match(/(saying|with)[:\s]+['"]?([^'"]+)['"]?/i)?.[2] || 'Thanks for the email.';
+      const isRecent = msg.includes('recent') || msg.includes('latest') || msg.includes('last') || !appState.currentEmail;
+      
+      const actions: any[] = [];
+      if (isRecent) {
+        actions.push({ type: 'search', query: 'is:inbox', filters: {} });
+      }
+      actions.push({ type: 'reply', body: replyText });
+      actions.push({ type: 'message', text: `Drafting reply saying: "${replyText}"` });
+      
       return {
-        reasoning: 'Fallback: Delete open email command detected.',
-        actions: [
-          { type: 'delete' },
-          { type: 'message', text: 'Deleting the open email.' }
-        ]
+        reasoning: 'Fallback: Reply command detected.',
+        actions
       };
     }
 
-    // 5. Compose/Send email: "Send an email to john@example.com with subject 'Meeting Tomorrow' and body 'Let’s meet at 3pm'"
-    if (msg.includes('send') && msg.includes('email to')) {
-      const toEmail = userMessage.match(/to\s+([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i)?.[1] || '';
+    // 3. Delete email: "delete the recent email", "delete this email"
+    if (msg.includes('delete') || msg.includes('remove') || msg.includes('trash')) {
+      const isRecent = msg.includes('recent') || msg.includes('latest') || msg.includes('last') || !appState.currentEmail;
+      
+      const actions: any[] = [];
+      if (isRecent) {
+        actions.push({ type: 'search', query: 'is:inbox', filters: {} });
+      }
+      actions.push({ type: 'delete' });
+      actions.push({ type: 'message', text: 'Deleting email.' });
+      
+      return {
+        reasoning: 'Fallback: Delete email command detected.',
+        actions
+      };
+    }
+
+    // 4. Compose/Send email: "Send an email to john@example.com with subject 'Meeting' and body 'Let's meet'"
+    if (msg.includes('send') && msg.includes('email') && emailMatch) {
+      const toEmail = emailMatch[1];
       const subject = userMessage.match(/subject\s+['"]?([^'"]+?)['"]?(\s+and|$)/i)?.[1] || 'No Subject';
       const body = userMessage.match(/body\s+['"]?([^'"]+?)['"]?$/i)?.[1] || 'No Content';
       
@@ -167,7 +173,7 @@ export class GeminiService {
       };
     }
 
-    // 6. Search date filters: "Show me emails from the last 10 days"
+    // 5. Search date filters: "Show me emails from the last 10 days"
     const lastDaysMatch = msg.match(/(emails|search|find|show).*last\s+(\d+)\s+days/i);
     if (lastDaysMatch) {
       const days = lastDaysMatch[2];
@@ -180,7 +186,7 @@ export class GeminiService {
       };
     }
 
-    // 7. Unread status filters: "Show only unread emails from this week"
+    // 6. Unread status filters: "Show only unread emails from this week"
     if (msg.includes('unread')) {
       const dateRange = msg.includes('week') ? '7d' : undefined;
       return {
@@ -192,7 +198,7 @@ export class GeminiService {
       };
     }
 
-    // 8. Search sender/keyword: "Find the email from Sarah about the project update"
+    // 7. Search sender/keyword: "Find the email from Sarah about the project update"
     const senderMatch = msg.match(/(from|by)\s+(\w+)/i);
     const keywordMatch = msg.match(/(about|regarding)\s+([\w\s]+)/i);
     
@@ -214,11 +220,11 @@ export class GeminiService {
       };
     }
 
-    // 9. Open latest email: "Open the latest email from David"
-    if (msg.startsWith('open the latest email') || msg.startsWith('open latest email') || msg.startsWith('open latest')) {
+    // 8. Open latest/recent email: "Open the latest email from David", "open the recent email"
+    if (msg.includes('open') || msg.includes('view') || msg.includes('show')) {
       const fromDavid = userMessage.match(/(from|by)\s+(\w+)/i)?.[2] || '';
       return {
-        reasoning: 'Fallback: Open latest email command detected.',
+        reasoning: 'Fallback: Open email command detected.',
         actions: [
           { type: 'search', query: fromDavid ? `from:${fromDavid}` : 'is:inbox', filters: { sender: fromDavid || undefined } },
           { type: 'message', text: `Opening latest email${fromDavid ? ` from ${fromDavid}` : ''}.` }
