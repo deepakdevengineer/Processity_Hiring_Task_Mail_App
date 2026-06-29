@@ -23,10 +23,26 @@ app.use(helmet({
 }));
 
 app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    process.env.FRONTEND_URL || 'http://localhost:3000',
-  ],
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl)
+    if (!origin) return callback(null, true);
+    
+    const allowedPatterns = [
+      /localhost:\d+$/,
+      /\.vercel\.app$/,
+      /\.render\.com$/
+    ];
+    
+    const isAllowed = allowedPatterns.some(regex => regex.test(origin));
+    
+    // Also allow exact match of process.env.FRONTEND_URL
+    const exactFrontend = process.env.FRONTEND_URL;
+    if (isAllowed || (exactFrontend && origin === exactFrontend) || process.env.NODE_ENV !== 'production') {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],

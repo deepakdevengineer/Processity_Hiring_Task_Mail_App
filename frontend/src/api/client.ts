@@ -2,7 +2,15 @@
 import axios, { AxiosInstance } from 'axios';
 import { useMailStore } from '../store/mailStore';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+let API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+
+// Auto-switch to live Render backend if frontend is hosted on Vercel/Render but API_URL is localhost
+if (typeof window !== 'undefined' && window.location) {
+  const host = window.location.hostname;
+  if ((host.includes('vercel.app') || host.includes('render.com')) && API_URL.includes('localhost')) {
+    API_URL = 'https://processity-hiring-task-mail-app.onrender.com';
+  }
+}
 
 const client: AxiosInstance = axios.create({
   baseURL: API_URL,
