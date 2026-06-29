@@ -140,7 +140,7 @@ router.get('/verify', (req: Request, res: Response) => {
  * Bypasses Google OAuth and logs in using a mock local developer sandbox user.
  * Seeds mock emails if database table is empty.
  */
-router.post('/sandbox', async (req: Request, res: Response) => {
+router.all('/sandbox', async (req: Request, res: Response) => {
   try {
     const { pool } = require('../db/postgres');
     
