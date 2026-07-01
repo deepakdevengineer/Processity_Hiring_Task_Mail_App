@@ -226,8 +226,8 @@ export class GeminiService {
     // 6. Schedule email: "schedule an email to john@example.com at 5pm with subject 'meeting' and body 'hello'"
     if (msg.includes('schedule') && msg.includes('email') && emailMatch) {
       const toEmail = emailMatch[1];
-      const subject = userMessage.match(/subject\s+['"]?([^'"]+?)['"]?(\s+and|$)/i)?.[1] || 'No Subject';
-      const body = userMessage.match(/body\s+['"]?([^'"]+?)['"]?$/i)?.[1] || 'No Content';
+      const subject = GeminiService.extractSubject(userMessage);
+      const body = GeminiService.extractBody(userMessage);
       
       // Default to 1 hour in future for testing
       const scheduledAt = new Date(Date.now() + 3600 * 1000).toISOString();
@@ -246,8 +246,8 @@ export class GeminiService {
     // 7. Compose/Send email: "Send an email to john@example.com with subject 'Meeting' and body 'Let's meet'"
     if ((msg.includes('send') || msg.includes('compose') || msg.includes('write')) && msg.includes('email') && emailMatch) {
       const toEmail = emailMatch[1];
-      const subject = userMessage.match(/subject\s+['"]?([^'"]+?)['"]?(\s+and|$)/i)?.[1] || 'No Subject';
-      const body = userMessage.match(/body\s+['"]?([^'"]+?)['"]?$/i)?.[1] || 'No Content';
+      const subject = GeminiService.extractSubject(userMessage);
+      const body = GeminiService.extractBody(userMessage);
       
       return {
         reasoning: 'Fallback: Send email command parsed.',
@@ -583,5 +583,65 @@ Body: ${body}`;
     }
 
     return "Thank you for your email. I have received it and will review the details to get back to you shortly.";
+  }
+
+  /**
+   * Helper to robustly extract subject from natural language compose commands
+   */
+  private static extractSubject(msg: string): string {
+    const subjMarker = 'subject ';
+    const subjIdx = msg.toLowerCase().indexOf(subjMarker);
+    if (subjIdx === -1) return 'No Subject';
+    
+    let endIdx = msg.toLowerCase().indexOf(' and body', subjIdx);
+    if (endIdx === -1) {
+      endIdx = msg.toLowerCase().indexOf(' body', subjIdx);
+    }
+    
+    let subjContent = '';
+    if (endIdx !== -1) {
+      subjContent = msg.substring(subjIdx + subjMarker.length, endIdx).trim();
+    } else {
+      subjContent = msg.substring(subjIdx + subjMarker.length).trim();
+    }
+    
+    // Strip opening and closing quotes if present
+    const firstChar = subjContent.charAt(0);
+    if (firstChar === "'" || firstChar === '"' || firstChar === '‘' || firstChar === '“') {
+      subjContent = subjContent.substring(1);
+      const lastChar = subjContent.charAt(subjContent.length - 1);
+      if (lastChar === firstChar || 
+          (firstChar === '‘' && lastChar === '’') || 
+          (firstChar === '“' && lastChar === '”')) {
+        subjContent = subjContent.substring(0, subjContent.length - 1);
+      }
+    }
+    
+    return subjContent.trim();
+  }
+
+  /**
+   * Helper to robustly extract body from natural language compose commands
+   */
+  private static extractBody(msg: string): string {
+    const bodyMarker = 'body ';
+    const bodyIdx = msg.toLowerCase().indexOf(bodyMarker);
+    if (bodyIdx === -1) return 'No Content';
+    
+    let bodyContent = msg.substring(bodyIdx + bodyMarker.length).trim();
+    
+    // Strip opening and closing quotes if present
+    const firstChar = bodyContent.charAt(0);
+    if (firstChar === "'" || firstChar === '"' || firstChar === '‘' || firstChar === '“') {
+      bodyContent = bodyContent.substring(1);
+      const lastChar = bodyContent.charAt(bodyContent.length - 1);
+      if (lastChar === firstChar || 
+          (firstChar === '‘' && lastChar === '’') || 
+          (firstChar === '“' && lastChar === '”')) {
+        bodyContent = bodyContent.substring(0, bodyContent.length - 1);
+      }
+    }
+    
+    return bodyContent.trim();
   }
 }
