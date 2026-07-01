@@ -72,7 +72,7 @@ export class SchedulerService {
   static async deleteScheduledEmail(id: number, userId: number) {
     const query = `
       DELETE FROM scheduled_emails
-      WHERE id = $1 AND user_id = $2 AND status = 'pending'
+      WHERE id = $1 AND user_id = $2
       RETURNING *
     `;
     const result = await pool.query(query, [id, userId]);
