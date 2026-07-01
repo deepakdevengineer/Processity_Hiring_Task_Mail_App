@@ -42,6 +42,8 @@ interface MailStore extends AppState {
   setAutoReplyEnabled: (enabled: boolean) => void;
   scheduledCount: number;
   setScheduledCount: (count: number) => void;
+  isSearching: boolean;
+  setIsSearching: (isSearching: boolean) => void;
 }
 
 export const useMailStore = create<MailStore>((set) => ({
@@ -55,6 +57,7 @@ export const useMailStore = create<MailStore>((set) => ({
   loading: false,
   error: null,
   authToken: localStorage.getItem('auth_token'),
+  isSearching: false,
   
   // Compose Form Fields State
   composeFields: {
@@ -74,9 +77,17 @@ export const useMailStore = create<MailStore>((set) => ({
   // UI Actions
   setCurrentView: (view) => set({ currentView: view }),
   setCurrentEmail: (email) => set({ currentEmail: email }),
-  setEmails: (emails) => set({ emails }),
-  setFilters: (filters) => set({ filters }),
+  setEmails: (emails) => {
+    console.log('[Store] setEmails called with:', emails.length, 'emails');
+    console.trace('[Store] setEmails stack trace');
+    set({ emails });
+  },
+  setFilters: (filters) => {
+    console.log('[Store] setFilters called with:', filters);
+    set({ filters });
+  },
   setUnreadCount: (count) => set({ unreadCount: count }),
+  setIsSearching: (isSearching) => set({ isSearching }),
   
   // User Actions
   setUser: (user) => set({ user }),

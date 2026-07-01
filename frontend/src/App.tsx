@@ -57,7 +57,7 @@ export const MainApp: React.FC = () => {
         // 1. Fetch inbox emails
         const response = await emailAPI.getInbox(20);
         const inboxEmails = response.data.data || [];
-        if (currentView === 'inbox' && Object.keys(store.filters || {}).length === 0) {
+        if (currentView === 'inbox' && !store.isSearching) {
           setEmails(inboxEmails);
         }
         
@@ -310,7 +310,9 @@ export const MainApp: React.FC = () => {
           {/* Inbox nav */}
           <button
             onClick={() => {
-              useMailStore.getState().setFilters({});
+              const store = useMailStore.getState();
+              store.setFilters({});
+              store.setIsSearching(false);
               setCurrentView('inbox');
             }}
             style={{

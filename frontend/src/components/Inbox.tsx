@@ -35,7 +35,8 @@ export const Inbox: React.FC<EmailListProps> = ({ isSent = false, isScheduled = 
     setCurrentView, 
     loading, 
     setLoading,
-    filters 
+    isSearching,
+    setIsSearching
   } = useMailStore();
   
   const [error, setError] = useState<string | null>(null);
@@ -49,10 +50,10 @@ export const Inbox: React.FC<EmailListProps> = ({ isSent = false, isScheduled = 
   const [filterKeyword, setFilterKeyword] = useState('');
 
   useEffect(() => {
-    // If AI just populated emails, do not overwrite them immediately on mount
-    if (Object.keys(filters || {}).length > 0) return;
+    // If AI or UI just populated search results, do not overwrite them immediately on mount
+    if (isSearching) return;
     loadEmails();
-  }, [isSent, isScheduled, filterRead, filterDate, filters]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isSent, isScheduled, filterRead, filterDate, isSearching]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getAppliedFilters = () => {
     const f: any = {};
@@ -77,9 +78,11 @@ export const Inbox: React.FC<EmailListProps> = ({ isSent = false, isScheduled = 
         
         if (hasActiveFilters || searchQuery.trim()) {
           // If we have filters or query search, use search route
+          setIsSearching(true);
           response = await emailAPI.search(searchQuery, activeFilters);
         } else {
           // Normal fetch
+          setIsSearching(false);
           response = isSent ? await emailAPI.getSent(20) : await emailAPI.getInbox(20);
         }
       }
@@ -123,7 +126,9 @@ export const Inbox: React.FC<EmailListProps> = ({ isSent = false, isScheduled = 
     setFilterSender('');
     setFilterKeyword('');
     setSearchQuery('');
-    useMailStore.getState().setFilters({});
+    const store = useMailStore.getState();
+    store.setFilters({});
+    store.setIsSearching(false);
   };
 
   const handleEmailClick = async (emailId: string) => {
