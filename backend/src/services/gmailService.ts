@@ -444,8 +444,11 @@ export class GmailService {
         let paramIdx = 2;
 
         if (filters?.isRead !== undefined) {
+          const isReadBool = typeof filters.isRead === 'string'
+            ? filters.isRead === 'true'
+            : !!filters.isRead;
           sql += ` AND is_read = $${paramIdx++}`;
-          params.push(filters.isRead);
+          params.push(isReadBool);
         }
 
         if (filters?.dateRange) {

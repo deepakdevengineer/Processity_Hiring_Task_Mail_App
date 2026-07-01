@@ -4,7 +4,7 @@ import { GeminiResponse, AppState } from '../types';
 
 export class GeminiService {
   private apiKey: string;
-  private apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
+  private apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
   constructor() {
     this.apiKey = process.env.GEMINI_API_KEY || '';
@@ -154,14 +154,7 @@ export class GeminiService {
         actions.push({ type: 'search', query: 'is:inbox', filters: {} });
       }
       actions.push({ type: 'forward', to: toEmail });
-      
-      const isDraftForward = msg.includes('draft');
-      if (!isDraftForward) {
-        actions.push({ type: 'submit', formId: 'composeForm' });
-        actions.push({ type: 'message', text: `Sending forward to ${toEmail}.` });
-      } else {
-        actions.push({ type: 'message', text: `Drafting forward to ${toEmail}.` });
-      }
+      actions.push({ type: 'message', text: `Forwarding email to ${toEmail}. Review the draft and click Send.` });
       
       return {
         reasoning: 'Fallback: Forward email command detected.',
@@ -176,12 +169,23 @@ export class GeminiService {
       
       let replyText = 'Thanks for the email.';
       
+      // Check if user provided specific reply text
       const customSaying = userMessage.match(/(saying|with|response)[:\s]+['"]?([^'"]+)['"]?/i)?.[2] || 
                            userMessage.match(/reply\s+['"]?([^'"]+?)['"]?$/i)?.[1];
       if (customSaying && !customSaying.includes('to the') && !customSaying.includes('to this')) {
-        replyText = customSaying;
+        // User gave specific text — make it into a natural reply
+        replyText = GeminiService.generateNaturalReplyBody(
+          targetEmail?.subject || '', 
+          targetEmail?.body || '', 
+          customSaying
+        );
       } else if (targetEmail) {
-        replyText = GeminiService.generateLocalContextualReply(targetEmail.subject, targetEmail.body);
+        // No specific text — generate contextual reply from email content
+        replyText = GeminiService.generateNaturalReplyBody(
+          targetEmail.subject, 
+          targetEmail.body, 
+          ''
+        );
       }
       
       const actions: any[] = [];
@@ -189,14 +193,7 @@ export class GeminiService {
         actions.push({ type: 'search', query: 'is:inbox', filters: {} });
       }
       actions.push({ type: 'reply', body: replyText });
-      
-      const isDraftReply = msg.includes('draft');
-      if (!isDraftReply) {
-        actions.push({ type: 'submit', formId: 'composeForm' });
-        actions.push({ type: 'message', text: `Sending reply: "${replyText}"` });
-      } else {
-        actions.push({ type: 'message', text: `Drafting reply: "${replyText}"` });
-      }
+      actions.push({ type: 'message', text: `Drafted a reply. Review the draft and click Send when ready.` });
       
       return {
         reasoning: 'Fallback: Reply command detected.',
@@ -237,23 +234,32 @@ export class GeminiService {
       }
     }
 
-    // 6. Schedule email: "schedule an email to john@example.com at 5pm with subject 'meeting' and body 'hello'"
-    const hasTimeIndicator = msg.includes('schedule') || 
-                             /\bat\s+\d{1,2}[.:]\d{2}/i.test(userMessage) || 
-                             /\bat\s+\d{1,2}\s*(pm|am)/i.test(userMessage) ||
-                             /\bin\s+\d+\s+(hour|min)/i.test(userMessage);
+    // 6. Schedule email: triggered by explicit "schedule" keyword OR a precise time indicator (e.g. HH:MM format like "at 11:28pm")
+    const hasPreciseTime = /\bat\s+\d{1,2}[.:]\d{2}\s*(pm|am)?/i.test(userMessage) ||
+                           /\bin\s+\d+\s+(hour|min)/i.test(userMessage);
+    const hasScheduleKeyword = msg.includes('schedule');
+    const isSchedule = (hasScheduleKeyword || hasPreciseTime) && msg.includes('email') && emailMatch;
 
-    if (hasTimeIndicator && msg.includes('email') && emailMatch) {
+    if (isSchedule) {
       const toEmail = emailMatch[1];
       const subject = GeminiService.extractSubject(userMessage);
-      const body = GeminiService.extractBody(userMessage);
-      const scheduledAt = GeminiService.extractScheduleTime(userMessage);
+      let rawBody = GeminiService.extractBody(userMessage);
+      
+      // Strip trailing precise schedule time from the body so it is not literally in the email
+      rawBody = rawBody.replace(/\s*at\s+\d{1,2}[.:]\d{2}\s*(pm|am)?\s*$/i, '').trim();
+      rawBody = rawBody.replace(/\s*in\s+\d+\s+(hour|min)s?\s*$/i, '').trim();
+      // Strip any unmatched trailing quote resulting from the split
+      rawBody = rawBody.replace(/['"]$/, '').trim();
+
+      const body = GeminiService.generateNaturalEmailBody(subject, rawBody, toEmail);
+      const timezoneOffset = (appState as any).clientTimezoneOffset;
+      const scheduledAt = GeminiService.extractScheduleTime(userMessage, timezoneOffset);
       
       return {
         reasoning: 'Fallback: Schedule email command parsed.',
         actions: [
           { type: 'schedule', to: toEmail, subject, body, scheduledAt },
-          { type: 'message', text: `Scheduling email to ${toEmail} with subject: "${subject}" at ${new Date(scheduledAt).toLocaleString()}` }
+          { type: 'message', text: `Scheduled email to ${toEmail} with subject: "${subject}" for ${new Date(scheduledAt).toLocaleString()}` }
         ]
       };
     }
@@ -262,23 +268,19 @@ export class GeminiService {
     if ((msg.includes('send') || msg.includes('compose') || msg.includes('write')) && msg.includes('email') && emailMatch) {
       const toEmail = emailMatch[1];
       const subject = GeminiService.extractSubject(userMessage);
-      const body = GeminiService.extractBody(userMessage);
+      const rawBody = GeminiService.extractBody(userMessage);
+      
+      // Generate a professional, natural email body from the user's raw intent
+      const body = GeminiService.generateNaturalEmailBody(subject, rawBody, toEmail);
       
       const actions: any[] = [
         { type: 'navigate', view: 'compose' },
-        { type: 'fillForm', formId: 'composeForm', fields: { to: toEmail, subject, body } }
+        { type: 'fillForm', formId: 'composeForm', fields: { to: toEmail, subject, body } },
+        { type: 'message', text: `Drafted email to ${toEmail} with subject: "${subject}". Review and click Send.` }
       ];
       
-      const isSend = msg.includes('send');
-      if (isSend) {
-        actions.push({ type: 'submit', formId: 'composeForm' });
-        actions.push({ type: 'message', text: `Sending email to ${toEmail} with subject: "${subject}"` });
-      } else {
-        actions.push({ type: 'message', text: `Drafting email to ${toEmail} with subject: "${subject}"` });
-      }
-      
       return {
-        reasoning: isSend ? 'Fallback: Send email command parsed.' : 'Fallback: Draft email command parsed.',
+        reasoning: 'Fallback: Compose email command parsed.',
         actions
       };
     }
@@ -396,10 +398,14 @@ export class GeminiService {
     };
   }
 
-  private buildSystemPrompt(appState: AppState): string {
+  private buildSystemPrompt(appState: any): string {
     const currentEmailInfo = appState.currentEmail
       ? `From: ${appState.currentEmail.from_address}, Subject: "${appState.currentEmail.subject}", ID: ${appState.currentEmail.id}, Body: "${appState.currentEmail.body.substring(0, 300)}"`
       : 'None';
+
+    const clientTimeStr = appState.clientTime || new Date().toString();
+    const timezoneOffset = appState.clientTimezoneOffset !== undefined ? appState.clientTimezoneOffset : new Date().getTimezoneOffset();
+    const clientLocalIso = appState.clientLocalIso || new Date().toLocaleString();
 
     return `You are an AI assistant for a mail application. You control the UI by returning a structured JSON action plan. You are NOT a chatbot — you take actions.
 
@@ -409,7 +415,14 @@ CURRENT APP STATE:
 - Total Emails Visible: ${appState.emails.length}
 - Unread Count: ${appState.unreadCount}
 - Active Filters: ${JSON.stringify(appState.filters)}
-- Current Date/Time: ${new Date().toISOString()} (Use this as reference to calculate exact ISO strings for relative times like "tomorrow at 5 PM", "in 2 hours", etc.)
+- Current User Local Date/Time: ${clientTimeStr} (Format: ${clientLocalIso})
+- User Timezone Offset: ${timezoneOffset} minutes (Difference from UTC)
+- Reference UTC Date/Time: ${new Date().toISOString()}
+
+INSTRUCTIONS FOR TIME CALCULATION:
+1. The user's current local date and time is "${clientTimeStr}".
+2. If the user mentions any relative or exact time (e.g. "tomorrow at 5 PM", "in 2 hours", "at 11:36pm"), you MUST calculate the target date and time relative to this local time, convert the calculated local time to a UTC ISO string, and return that UTC ISO string as the value for "scheduledAt".
+3. E.g., if user local time is 11:36 PM (offset -330 mins / +05:30) and they say "at 11:36pm", the target is 11:36 PM local time of today. Since local time is 23:36 and offset is -330 mins (+05:30), the target UTC time is 18:06 UTC of today, so return "2026-07-01T18:06:00.000Z".
 
 AVAILABLE ACTIONS:
 You MUST respond with ONLY a valid JSON object — no markdown, no explanation outside JSON.
@@ -520,7 +533,8 @@ RULES:
 2. For "reply" or "forward" commands: if an email is not currently open, you MUST first search for the email (e.g. "search" action with "query": "is:inbox") to open it, then perform the "reply" or "forward" action.
 3. If the user asks to "send" the reply/forward/email, ALWAYS include the "submit" action at the end of the action pipeline. If they just say "write a reply" or "draft a reply", do not include "submit" so they can review the draft.
 4. When performing a "reply", write a contextually appropriate, professional body if the user doesn't specify the exact text.
-5. Avoid any HTML tags in the preview or message text.`;
+5. Avoid any HTML tags in the preview or message text.
+6. When composing or scheduling an email ("fillForm" or "schedule" actions): if the user's raw message or body contains brief notes, fragmented sentences, or grammatical stutters (e.g. "Let's meet and about the new tech news with new tech news"), you MUST rewrite and expand it into a naturally written, professional email body (including a greeting like "Hi,", coherent paragraphs, and a professional sign-off like "Best regards"). Do not copy stutters or raw shorthand text literally.`;
   }
 
   /**
@@ -574,39 +588,104 @@ Body: ${body}`;
   }
 
   /**
-   * Generates a context-aware draft reply locally when Gemini is rate-limited
+   * Generates a professional, natural email body from raw user intent
+   * Transforms brief notes like "Let's meet about tech news" into a proper email
    */
-  private static generateLocalContextualReply(subject: string, body: string): string {
-    const sub = (subject || '').toLowerCase();
-    const content = (body || '').toLowerCase();
-
-    if (sub.includes('storage') || sub.includes('space') || content.includes('storage') || content.includes('full')) {
-      return "Thank you for the notification regarding the Google Account storage limit. I will review my Gmail storage and clean up unnecessary files to free up space.";
+  private static generateNaturalEmailBody(subject: string, rawBody: string, toEmail: string): string {
+    // If the user already wrote a long, complete body, don't over-process it
+    if (rawBody.length > 150 || rawBody.includes('\n')) {
+      return `Hi,\n\n${rawBody}\n\nBest regards`;
     }
     
-    if (sub.includes('failure') || sub.includes('failed') || sub.includes('delivery status') || sub.includes('undelivered')) {
-      return "I have received the delivery failure notice. I will check the recipient's email address for any typos and attempt to resend the message.";
+    // If body is "No Content" or empty, generate from subject
+    if (!rawBody || rawBody === 'No Content') {
+      const sub = (subject || '').toLowerCase();
+      if (sub.includes('meeting')) {
+        return `Hi,\n\nI wanted to reach out regarding ${subject}. Could we schedule a time to connect and discuss? Please let me know your availability, and I will send over a calendar invite.\n\nLooking forward to hearing from you.\n\nBest regards`;
+      }
+      if (sub.includes('update') || sub.includes('report')) {
+        return `Hi,\n\nI hope this email finds you well. I am writing to provide you with an update on ${subject}. Please find the details below, and feel free to reach out if you have any questions.\n\nBest regards`;
+      }
+      return `Hi,\n\nI hope this email finds you well. I am writing to you regarding ${subject}. I would love to discuss this further at your convenience.\n\nPlease let me know if you have any questions.\n\nBest regards`;
+    }
+    
+    // Transform short raw body into a professional email
+    const sub = (subject || '').toLowerCase();
+    const raw = rawBody.trim();
+    
+    if (sub.includes('meeting') || raw.includes('meet') || raw.includes('discuss')) {
+      return `Hi,\n\n${raw.charAt(0).toUpperCase() + raw.slice(1)}. Please let me know your availability so we can coordinate. I look forward to our conversation.\n\nBest regards`;
+    }
+    
+    if (sub.includes('follow') || raw.includes('follow')) {
+      return `Hi,\n\nI am following up on our earlier discussion. ${raw.charAt(0).toUpperCase() + raw.slice(1)}. Please let me know if there are any updates on your end.\n\nThank you,\nBest regards`;
+    }
+    
+    if (sub.includes('thank') || raw.includes('thank')) {
+      return `Hi,\n\n${raw.charAt(0).toUpperCase() + raw.slice(1)}. I truly appreciate your help and support.\n\nWarm regards`;
+    }
+    
+    // General case — wrap raw content in a professional email format
+    return `Hi,\n\n${raw.charAt(0).toUpperCase() + raw.slice(1)}.\n\nPlease feel free to reach out if you have any questions or need further details.\n\nBest regards`;
+  }
+
+  /**
+   * Generates a context-aware, natural reply body from original email content
+   * If userIntent is provided, incorporates it; otherwise generates from context
+   */
+  private static generateNaturalReplyBody(originalSubject: string, originalBody: string, userIntent: string): string {
+    const sub = (originalSubject || '').toLowerCase().replace(/^(re:|fwd:)\s*/gi, '').trim();
+    const content = (originalBody || '').toLowerCase();
+    const intent = (userIntent || '').trim();
+    
+    // If user provided specific intent, wrap it naturally
+    if (intent) {
+      return `Hi,\n\n${intent.charAt(0).toUpperCase() + intent.slice(1)}.\n\nPlease let me know if you need anything else.\n\nBest regards`;
+    }
+    
+    // Context-aware auto-reply based on email content analysis
+    if (sub.includes('storage') || sub.includes('space') || content.includes('storage') || content.includes('quota')) {
+      return `Hi,\n\nThank you for the notification regarding the storage limit. I will review my account storage and clean up unnecessary files to free up space right away.\n\nBest regards`;
+    }
+    
+    if (sub.includes('failure') || sub.includes('failed') || sub.includes('delivery') || sub.includes('undelivered') || sub.includes('bounce')) {
+      return `Hi,\n\nI have received the delivery failure notice. I will verify the recipient's email address for any errors and attempt to resend the message.\n\nThank you for the alert.\n\nBest regards`;
     }
 
-    if (sub.includes('security') || sub.includes('alert') || sub.includes('sign-in')) {
-      return "Thank you for the security alert. I have checked the sign-in details and verified that this was an authorized activity.";
+    if (sub.includes('security') || sub.includes('alert') || sub.includes('sign-in') || sub.includes('suspicious')) {
+      return `Hi,\n\nThank you for the security alert. I have reviewed the sign-in activity and can confirm that it was authorized. I will continue to monitor my account for any unusual activity.\n\nBest regards`;
     }
 
-    if (sub.includes('meeting') || sub.includes('schedule') || sub.includes('call') || sub.includes('zoom')) {
-      return "Thank you for the invitation. I have checked my calendar, noted the meeting details, and will join at the scheduled time.";
+    if (sub.includes('meeting') || sub.includes('schedule') || sub.includes('call') || sub.includes('zoom') || sub.includes('invite')) {
+      return `Hi,\n\nThank you for the meeting invitation. I have noted the details and will be available at the scheduled time. Looking forward to our discussion.\n\nBest regards`;
+    }
+    
+    if (sub.includes('interview') || sub.includes('application') || sub.includes('hiring') || sub.includes('job') || sub.includes('position')) {
+      return `Hi,\n\nThank you for reaching out regarding this opportunity. I am very interested and would be happy to discuss further at your convenience.\n\nPlease let me know the next steps.\n\nBest regards`;
+    }
+    
+    if (sub.includes('invoice') || sub.includes('payment') || sub.includes('billing') || sub.includes('receipt')) {
+      return `Hi,\n\nThank you for sending this over. I have received the document and will review the details. I will get back to you shortly if I have any questions.\n\nBest regards`;
     }
 
-    if (sub.includes('newsletter') || sub.includes('weekly') || sub.includes('digest') || sub.includes('codepen') || sub.includes('update')) {
-      return "Thank you for sharing the latest update. I will check out the details and let you know if I have any questions.";
+    if (sub.includes('newsletter') || sub.includes('weekly') || sub.includes('digest') || sub.includes('update') || sub.includes('announcement')) {
+      return `Hi,\n\nThank you for the update. I have gone through the details and appreciate you sharing this information.\n\nBest regards`;
+    }
+    
+    if (content.includes('question') || content.includes('help') || content.includes('assist') || content.includes('support')) {
+      return `Hi,\n\nThank you for reaching out. I would be happy to help with this. Let me look into the details and I will get back to you with a response shortly.\n\nBest regards`;
+    }
+    
+    if (content.includes('congratulat') || content.includes('welcome') || content.includes('great news')) {
+      return `Hi,\n\nThank you so much! I really appreciate the kind words. Looking forward to continuing to work together.\n\nBest regards`;
     }
 
-    // Dynamic fallback using the subject
-    const cleanSubject = (subject || '').replace(/^re:\s*/i, '').trim();
-    if (cleanSubject && cleanSubject !== '(no subject)') {
-      return `Thank you for your email regarding "${cleanSubject}". I have received your message and will review the details to get back to you as soon as possible.`;
+    // Generic contextual fallback using the subject
+    if (sub && sub !== '(no subject)') {
+      return `Hi,\n\nThank you for your email regarding "${originalSubject.replace(/^(re:|fwd:)\s*/gi, '').trim()}". I have reviewed the details and will follow up accordingly.\n\nPlease feel free to reach out if there is anything else to discuss.\n\nBest regards`;
     }
 
-    return "Thank you for your email. I have received it and will review the details to get back to you shortly.";
+    return `Hi,\n\nThank you for your email. I have received it and will review the details. I will get back to you shortly.\n\nBest regards`;
   }
 
   /**
@@ -672,9 +751,12 @@ Body: ${body}`;
   /**
    * Helper to extract relative/exact scheduled time from natural language commands
    */
-  private static extractScheduleTime(msg: string): string {
+  private static extractScheduleTime(msg: string, timezoneOffsetMins?: number): string {
     const timeMatch = msg.match(/at\s+(\d{1,2})[.:](\d{2})\s*(pm|am)?/i);
     const date = new Date();
+    
+    // Default to server offset if not specified
+    const offset = timezoneOffsetMins !== undefined ? timezoneOffsetMins : new Date().getTimezoneOffset();
     
     if (timeMatch) {
       let hours = parseInt(timeMatch[1], 10);
@@ -684,13 +766,31 @@ Body: ${body}`;
       if (ampm === 'pm' && hours < 12) hours += 12;
       if (ampm === 'am' && hours === 12) hours = 0;
       
-      date.setHours(hours, minutes, 0, 0);
+      // Calculate server-user timezone offset difference in milliseconds
+      const serverOffset = date.getTimezoneOffset();
+      const diffMs = (serverOffset - offset) * 60 * 1000;
       
-      // If the time has already passed today, assume they mean tomorrow
-      if (date <= new Date()) {
-        date.setDate(date.getDate() + 1);
+      // Represent server time in user's local timezone
+      const userLocalDate = new Date(date.getTime() + diffMs);
+      userLocalDate.setHours(hours, minutes, 0, 0);
+      
+      // Convert back to UTC server time
+      const targetUtcDate = new Date(userLocalDate.getTime() - diffMs);
+      
+      // Calculate user's current local date/time
+      const nowUserLocalDate = new Date(new Date().getTime() + diffMs);
+      if (userLocalDate <= nowUserLocalDate) {
+        const diffMsBetween = nowUserLocalDate.getTime() - userLocalDate.getTime();
+        // If it's within the last 5 minutes of local time, schedule 1 minute in the future
+        if (diffMsBetween > 0 && diffMsBetween < 5 * 60 * 1000) {
+          return new Date(Date.now() + 60 * 1000).toISOString();
+        } else {
+          // Assume tomorrow
+          userLocalDate.setDate(userLocalDate.getDate() + 1);
+          return new Date(userLocalDate.getTime() - diffMs).toISOString();
+        }
       }
-      return date.toISOString();
+      return targetUtcDate.toISOString();
     }
     
     // Check for "in X hours" or "in X minutes"

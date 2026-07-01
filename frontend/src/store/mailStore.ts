@@ -9,6 +9,11 @@ interface MailStore extends AppState {
   error: string | null;
   authToken: string | null;
   
+  // View-specific email caches to make folder navigation instant
+  inboxEmails: Email[];
+  sentEmails: Email[];
+  scheduledEmails: Email[];
+  
   // Compose Form Fields (for AI UI Control)
   composeFields: {
     to: string;
@@ -64,6 +69,9 @@ export const useMailStore = create<MailStore>((set) => ({
   error: null,
   authToken: localStorage.getItem('auth_token'),
   isSearching: false,
+  inboxEmails: [],
+  sentEmails: [],
+  scheduledEmails: [],
   
   // Compose Form Fields State
   composeFields: {
@@ -83,36 +91,41 @@ export const useMailStore = create<MailStore>((set) => ({
     }),
 
   // UI Actions
-  setCurrentView: (view) => set({ currentView: view }),
+  setCurrentView: (view) => set((state) => {
+    // When switching folders, instantly populate the view with cached emails
+    // to prevent any lag or old folder's emails showing up while new ones load
+    let activeEmails = state.emails;
+    if (view === 'inbox') {
+      activeEmails = state.inboxEmails;
+    } else if (view === 'sent') {
+      activeEmails = state.sentEmails;
+    } else if (view === 'scheduled') {
+      activeEmails = state.scheduledEmails;
+    }
+    return { currentView: view, emails: activeEmails };
+  }),
   setCurrentEmail: (email) => set({ currentEmail: email }),
   setEmails: (emails) => {
-    const stack = new Error().stack;
-    const token = localStorage.getItem('auth_token');
-    fetch('http://localhost:3001/api/ai/log', {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': token ? `Bearer ${token}` : ''
-      },
-      body: JSON.stringify({ event: 'setEmails', count: emails.length, stack })
-    }).catch(() => {});
-    set({ emails });
+    set((state) => {
+      const updates: Partial<MailStore> = { emails };
+      // Cache results based on the view if we are not actively searching
+      if (!state.isSearching) {
+        if (state.currentView === 'inbox' || state.currentView === 'detail') {
+          updates.inboxEmails = emails;
+        } else if (state.currentView === 'sent') {
+          updates.sentEmails = emails;
+        } else if (state.currentView === 'scheduled') {
+          updates.scheduledEmails = emails;
+        }
+      }
+      return updates;
+    });
   },
   setFilters: (filters) => {
     set({ filters });
   },
   setUnreadCount: (count) => set({ unreadCount: count }),
   setIsSearching: (isSearching) => {
-    const stack = new Error().stack;
-    const token = localStorage.getItem('auth_token');
-    fetch('http://localhost:3001/api/ai/log', {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': token ? `Bearer ${token}` : ''
-      },
-      body: JSON.stringify({ event: 'setIsSearching', value: isSearching, stack })
-    }).catch(() => {});
     set({ isSearching });
   },
   

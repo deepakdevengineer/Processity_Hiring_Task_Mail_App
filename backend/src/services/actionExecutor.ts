@@ -53,39 +53,9 @@ export class ActionExecutor {
           }
 
           case 'submit': {
-            // Send email using filled form data
-            if (action.formId === 'composeForm') {
-              // Use either pending compose fields or passed composeData
-              const sendData = composeData || pendingComposeFields;
-              if (sendData.to && sendData.subject !== undefined && sendData.body !== undefined) {
-                try {
-                  const ccArray = sendData.cc ? (Array.isArray(sendData.cc) ? sendData.cc : [sendData.cc]) : undefined;
-                  const bccArray = sendData.bcc ? (Array.isArray(sendData.bcc) ? sendData.bcc : [sendData.bcc]) : undefined;
-                  const messageId = await gmailService.sendEmail(
-                    sendData.to,
-                    sendData.subject,
-                    sendData.body,
-                    ccArray as string[],
-                    bccArray as string[]
-                  );
-                  executedActions.push({
-                    ...action,
-                    success: true,
-                    messageId,
-                  });
-                } catch (sendErr) {
-                  executedActions.push({
-                    type: 'message',
-                    text: `Failed to send email: ${(sendErr as Error).message}`,
-                  });
-                }
-              } else {
-                // No server data — let frontend handle it
-                executedActions.push(action);
-              }
-            } else {
-              executedActions.push(action);
-            }
+            // Pass through to frontend — frontend handles actual send with visual feedback
+            // This avoids the double-send bug where both backend and frontend try to send
+            executedActions.push(action);
             break;
           }
 
@@ -163,7 +133,7 @@ export class ActionExecutor {
       case 'fillForm':
         return !!(action.formId && action.fields);
       case 'search':
-        return action.query !== undefined;
+        return true;
       case 'submit':
         return true;
       case 'message':

@@ -56,6 +56,9 @@ export const AIAssistantPanel: React.FC = () => {
         emails: mailStore.emails,
         filters: mailStore.filters,
         unreadCount: mailStore.unreadCount,
+        clientTime: new Date().toString(),
+        clientTimezoneOffset: new Date().getTimezoneOffset(),
+        clientLocalIso: new Date().toLocaleString()
       };
 
       const response = await aiAPI.execute(userMessage, appState, mailStore.composeFields);
@@ -197,24 +200,30 @@ export const AIAssistantPanel: React.FC = () => {
               const freshStore = useMailStore.getState();
               const { to, subject, body } = freshStore.composeFields;
               if (to && subject) {
-                // Human-in-the-loop confirmation
-                const confirmed = window.confirm(
-                  `📧 Confirm sending email?\n\nTo: ${to}\nSubject: ${subject}\nBody: ${body?.substring(0, 100)}${(body?.length || 0) > 100 ? '...' : ''}`
-                );
-                if (confirmed) {
-                  try {
-                    await emailAPI.send(to, subject, body || '');
-                    freshStore.resetComposeFields();
-                    freshStore.setCurrentView('sent');
-                    const response = await emailAPI.getSent(20);
-                    freshStore.setEmails(response.data.data);
-                  } catch (err) {
-                    console.error('Send failed:', err);
-                  }
-                } else {
+                try {
+                  // Brief pause so user can see the filled compose form
+                  await new Promise(resolve => setTimeout(resolve, 1500));
+                  
                   setMessages(prev => [...prev, {
                     role: 'assistant',
-                    content: '✋ Send cancelled. Your draft is still in the compose window — review and send when ready.'
+                    content: `📤 Sending email to ${to}...`
+                  }]);
+                  
+                  await emailAPI.send(to, subject, body || '');
+                  freshStore.resetComposeFields();
+                  freshStore.setCurrentView('sent');
+                  const response = await emailAPI.getSent(20);
+                  freshStore.setEmails(response.data.data);
+                  
+                  setMessages(prev => [...prev, {
+                    role: 'assistant',
+                    content: `✅ Email sent successfully to ${to} with subject: "${subject}"`
+                  }]);
+                } catch (err) {
+                  console.error('Send failed:', err);
+                  setMessages(prev => [...prev, {
+                    role: 'assistant',
+                    content: `❌ Failed to send email: ${(err as Error).message}. Your draft is still in compose.`
                   }]);
                 }
               }
