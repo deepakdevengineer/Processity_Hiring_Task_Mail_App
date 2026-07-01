@@ -238,7 +238,12 @@ export class GeminiService {
     }
 
     // 6. Schedule email: "schedule an email to john@example.com at 5pm with subject 'meeting' and body 'hello'"
-    if (msg.includes('schedule') && msg.includes('email') && emailMatch) {
+    const hasTimeIndicator = msg.includes('schedule') || 
+                             /\bat\s+\d{1,2}[.:]\d{2}/i.test(userMessage) || 
+                             /\bat\s+\d{1,2}\s*(pm|am)/i.test(userMessage) ||
+                             /\bin\s+\d+\s+(hour|min)/i.test(userMessage);
+
+    if (hasTimeIndicator && msg.includes('email') && emailMatch) {
       const toEmail = emailMatch[1];
       const subject = GeminiService.extractSubject(userMessage);
       const body = GeminiService.extractBody(userMessage);
@@ -247,10 +252,8 @@ export class GeminiService {
       return {
         reasoning: 'Fallback: Schedule email command parsed.',
         actions: [
-          { type: 'navigate', view: 'compose' },
-          { type: 'fillForm', formId: 'composeForm', fields: { to: toEmail, subject, body } },
           { type: 'schedule', to: toEmail, subject, body, scheduledAt },
-          { type: 'message', text: `Drafting scheduled email to ${toEmail} with subject: "${subject}"` }
+          { type: 'message', text: `Scheduling email to ${toEmail} with subject: "${subject}" at ${new Date(scheduledAt).toLocaleString()}` }
         ]
       };
     }

@@ -255,32 +255,45 @@ export const AIAssistantPanel: React.FC = () => {
           case 'schedule':
             if (action.to && action.subject && action.body && action.scheduledAt) {
               try {
-                // 1. Fill fields in compose form
-                store.setComposeFields({
-                  to: extractEmailAddress(action.to),
-                  subject: action.subject,
-                  body: action.body
-                });
+                // Automatically schedule the email in backend
+                await emailAPI.schedule(
+                  extractEmailAddress(action.to),
+                  action.subject,
+                  action.body,
+                  action.scheduledAt
+                );
                 
-                // 2. Open scheduler panel in store
-                store.setShowScheduler(true);
+                // Clear compose inputs and switch to scheduled view
+                store.resetComposeFields();
+                store.setCurrentView('scheduled');
                 
-                // 3. Format ISO string (UTC) to local datetime-local format ("YYYY-MM-DDTHH:mm")
+                // Re-fetch scheduled email list to display the newly scheduled email instantly
+                const response = await emailAPI.getScheduled();
+                const mapped = (response.data.data || []).map((item: any) => ({
+                  id: String(item.id),
+                  from_address: 'Me',
+                  to_addresses: [item.to_address],
+                  subject: item.subject,
+                  body: item.body,
+                  date: item.scheduled_at,
+                  is_read: true,
+                  is_sent: false,
+                  status: item.status,
+                  error_message: item.error_message
+                }));
+                store.setEmails(mapped);
+                
                 const parsedDate = new Date(action.scheduledAt);
-                const tzOffset = parsedDate.getTimezoneOffset() * 60000;
-                const localISOTime = new Date(parsedDate.getTime() - tzOffset).toISOString().slice(0, 16);
-                store.setScheduleTime(localISOTime);
-                
-                // 4. Navigate to compose view
-                store.setCurrentView('compose');
-                
-                // 5. Output chat notification
                 setMessages(prev => [...prev, {
                   role: 'assistant',
-                  content: `⏰ Ready to schedule. I have drafted the email to ${action.to} and prepared the scheduler to send at ${parsedDate.toLocaleString()}. Review and click "Schedule Send" to queue it.`
+                  content: `✅ Email scheduled successfully to send to ${action.to} at ${parsedDate.toLocaleString()}.`
                 }]);
               } catch (err) {
-                console.error('Failed to prepare scheduled email draft:', err);
+                console.error('Scheduling failed:', err);
+                setMessages(prev => [...prev, {
+                  role: 'assistant',
+                  content: `❌ Failed to schedule email: ${(err as Error).message}`
+                }]);
               }
             }
             break;
