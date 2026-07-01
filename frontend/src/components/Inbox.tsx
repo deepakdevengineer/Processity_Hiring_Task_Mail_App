@@ -167,9 +167,15 @@ export const Inbox: React.FC<EmailListProps> = ({ isSent = false, isScheduled = 
     e.stopPropagation();
     if (!window.confirm('Cancel this scheduled email?')) return;
 
+    const cleanId = parseInt(String(id).replace(/\D/g, ''), 10);
+    if (isNaN(cleanId)) {
+      alert('Invalid scheduled email ID.');
+      return;
+    }
+
     try {
       setLoading(true);
-      await emailAPI.deleteScheduled(Number(id));
+      await emailAPI.deleteScheduled(cleanId);
       setEmails(emails.filter(email => email.id !== id));
       alert('Scheduled email cancelled successfully.');
     } catch (err) {

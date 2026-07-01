@@ -126,9 +126,16 @@ export const EmailDetail: React.FC = () => {
 
   const handleCancelScheduled = async () => {
     if (!window.confirm('Cancel this scheduled email?')) return;
+    
+    const cleanId = parseInt(String(currentEmail.id).replace(/\D/g, ''), 10);
+    if (isNaN(cleanId)) {
+      alert('Invalid scheduled email ID.');
+      return;
+    }
+
     try {
       setDeleting(true);
-      await emailAPI.deleteScheduled(Number(currentEmail.id));
+      await emailAPI.deleteScheduled(cleanId);
       setEmails(emails.filter(e => e.id !== currentEmail.id));
       setCurrentEmail(null);
       setCurrentView('scheduled');
