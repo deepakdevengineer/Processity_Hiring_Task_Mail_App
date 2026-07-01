@@ -70,7 +70,6 @@ export const MainApp: React.FC = () => {
         setScheduledCount(pendingScheduled.length);
 
         // 3. AI Autopilot auto-reply logic
-        const store = useMailStore.getState();
         if (store.autoReplyEnabled && unread.length > 0 && !autopilotProcessing) {
           setAutopilotProcessing(true);
           const repliedIds = JSON.parse(localStorage.getItem('ai_replied_ids') || '[]');
