@@ -53,10 +53,13 @@ export const MainApp: React.FC = () => {
 
     const pollEmails = async () => {
       try {
+        const store = useMailStore.getState();
         // 1. Fetch inbox emails
         const response = await emailAPI.getInbox(20);
         const inboxEmails = response.data.data || [];
-        if (currentView === 'inbox') setEmails(inboxEmails);
+        if (currentView === 'inbox' && Object.keys(store.filters || {}).length === 0) {
+          setEmails(inboxEmails);
+        }
         
         const unread = inboxEmails.filter((e: any) => !e.is_read);
         setUnreadCount(unread.length);
@@ -307,7 +310,10 @@ export const MainApp: React.FC = () => {
 
           {/* Inbox nav */}
           <button
-            onClick={() => setCurrentView('inbox')}
+            onClick={() => {
+              useMailStore.getState().setFilters({});
+              setCurrentView('inbox');
+            }}
             style={{
               width: '100%',
               display: 'flex',

@@ -118,6 +118,7 @@ export const AIAssistantPanel: React.FC = () => {
 
           case 'search':
             if (action.results) {
+              store.setFilters(action.filters || { isAiSearch: true });
               store.setEmails(action.results);
               store.setCurrentView('inbox');
               
