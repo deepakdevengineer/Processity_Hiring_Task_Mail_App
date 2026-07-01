@@ -154,7 +154,14 @@ export class GeminiService {
         actions.push({ type: 'search', query: 'is:inbox', filters: {} });
       }
       actions.push({ type: 'forward', to: toEmail });
-      actions.push({ type: 'message', text: `Drafting forward to ${toEmail}.` });
+      
+      const isDraftForward = msg.includes('draft');
+      if (!isDraftForward) {
+        actions.push({ type: 'submit', formId: 'composeForm' });
+        actions.push({ type: 'message', text: `Sending forward to ${toEmail}.` });
+      } else {
+        actions.push({ type: 'message', text: `Drafting forward to ${toEmail}.` });
+      }
       
       return {
         reasoning: 'Fallback: Forward email command detected.',
@@ -182,7 +189,14 @@ export class GeminiService {
         actions.push({ type: 'search', query: 'is:inbox', filters: {} });
       }
       actions.push({ type: 'reply', body: replyText });
-      actions.push({ type: 'message', text: `Drafting reply: "${replyText}"` });
+      
+      const isDraftReply = msg.includes('draft');
+      if (!isDraftReply) {
+        actions.push({ type: 'submit', formId: 'composeForm' });
+        actions.push({ type: 'message', text: `Sending reply: "${replyText}"` });
+      } else {
+        actions.push({ type: 'message', text: `Drafting reply: "${replyText}"` });
+      }
       
       return {
         reasoning: 'Fallback: Reply command detected.',
@@ -249,13 +263,22 @@ export class GeminiService {
       const subject = GeminiService.extractSubject(userMessage);
       const body = GeminiService.extractBody(userMessage);
       
+      const actions: any[] = [
+        { type: 'navigate', view: 'compose' },
+        { type: 'fillForm', formId: 'composeForm', fields: { to: toEmail, subject, body } }
+      ];
+      
+      const isSend = msg.includes('send');
+      if (isSend) {
+        actions.push({ type: 'submit', formId: 'composeForm' });
+        actions.push({ type: 'message', text: `Sending email to ${toEmail} with subject: "${subject}"` });
+      } else {
+        actions.push({ type: 'message', text: `Drafting email to ${toEmail} with subject: "${subject}"` });
+      }
+      
       return {
-        reasoning: 'Fallback: Send email command parsed.',
-        actions: [
-          { type: 'navigate', view: 'compose' },
-          { type: 'fillForm', formId: 'composeForm', fields: { to: toEmail, subject, body } },
-          { type: 'message', text: `Drafting email to ${toEmail} with subject: "${subject}"` }
-        ]
+        reasoning: isSend ? 'Fallback: Send email command parsed.' : 'Fallback: Draft email command parsed.',
+        actions
       };
     }
 
