@@ -57,7 +57,9 @@ export const MainApp: React.FC = () => {
         const response = await emailAPI.getInbox(20);
         const inboxEmails = response.data.data || [];
         const freshStore = useMailStore.getState();
-        if (currentView === 'inbox' && !freshStore.isSearching) {
+        console.log('[pollEmails] currentView:', currentView, 'storeView:', freshStore.currentView, 'isSearching:', freshStore.isSearching);
+        if (freshStore.currentView === 'inbox' && !freshStore.isSearching) {
+          console.log('[pollEmails] Overwriting emails with fresh inbox data');
           setEmails(inboxEmails);
         }
         
@@ -108,7 +110,7 @@ export const MainApp: React.FC = () => {
           }
           setAutopilotProcessing(false);
           // Refresh inbox list after replies are sent
-          if (!store.isSearching) {
+          if (!useMailStore.getState().isSearching) {
             const updatedRes = await emailAPI.getInbox(20);
             setEmails(updatedRes.data.data || []);
             setUnreadCount((updatedRes.data.data || []).filter((e: any) => !e.is_read).length);

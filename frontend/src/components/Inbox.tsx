@@ -50,8 +50,11 @@ export const Inbox: React.FC<EmailListProps> = ({ isSent = false, isScheduled = 
   const [filterKeyword, setFilterKeyword] = useState('');
 
   useEffect(() => {
-    // If AI or UI just populated search results, do not overwrite them immediately on mount
-    if (isSearching) return;
+    console.log('[Inbox useEffect] Triggered. isSearching:', isSearching, 'isSent:', isSent, 'isScheduled:', isScheduled);
+    if (isSearching) {
+      console.log('[Inbox useEffect] isSearching is true, skipping loadEmails');
+      return;
+    }
     loadEmails();
   }, [isSent, isScheduled, filterRead, filterDate, isSearching]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -66,6 +69,7 @@ export const Inbox: React.FC<EmailListProps> = ({ isSent = false, isScheduled = 
 
   const loadEmails = async () => {
     try {
+      console.log('[Inbox loadEmails] Loading emails...');
       setLoading(true);
       setError(null);
       

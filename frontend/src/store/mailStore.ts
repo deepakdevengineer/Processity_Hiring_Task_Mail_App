@@ -93,7 +93,11 @@ export const useMailStore = create<MailStore>((set) => ({
   // UI Actions
   setCurrentView: (view) => set((state) => {
     // When switching folders, instantly populate the view with cached emails
-    // to prevent any lag or old folder's emails showing up while new ones load
+    // to prevent any lag or old folder's emails showing up while new ones load.
+    // However, if we are in search mode, do not overwrite the search results!
+    if (state.isSearching) {
+      return { currentView: view };
+    }
     let activeEmails = state.emails;
     if (view === 'inbox') {
       activeEmails = state.inboxEmails;
