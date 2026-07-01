@@ -78,16 +78,27 @@ export const useMailStore = create<MailStore>((set) => ({
   setCurrentView: (view) => set({ currentView: view }),
   setCurrentEmail: (email) => set({ currentEmail: email }),
   setEmails: (emails) => {
-    console.log('[Store] setEmails called with:', emails.length, 'emails');
-    console.trace('[Store] setEmails stack trace');
+    const stack = new Error().stack;
+    fetch('http://localhost:3001/api/ai/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'setEmails', count: emails.length, stack })
+    }).catch(() => {});
     set({ emails });
   },
   setFilters: (filters) => {
-    console.log('[Store] setFilters called with:', filters);
     set({ filters });
   },
   setUnreadCount: (count) => set({ unreadCount: count }),
-  setIsSearching: (isSearching) => set({ isSearching }),
+  setIsSearching: (isSearching) => {
+    const stack = new Error().stack;
+    fetch('http://localhost:3001/api/ai/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'setIsSearching', value: isSearching, stack })
+    }).catch(() => {});
+    set({ isSearching });
+  },
   
   // User Actions
   setUser: (user) => set({ user }),

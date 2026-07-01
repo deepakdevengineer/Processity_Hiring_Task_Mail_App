@@ -120,8 +120,16 @@ router.post('/suggestions', async (req: Request, res: Response) => {
     
     res.json({ success: true, data: suggestions });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message,
+    });
   }
+});
+
+router.post('/log', (req: Request, res: Response) => {
+  console.log('[Frontend Debug Log]', JSON.stringify(req.body, null, 2));
+  res.json({ success: true });
 });
 
 export default router;
