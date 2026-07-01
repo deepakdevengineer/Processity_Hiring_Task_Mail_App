@@ -44,6 +44,12 @@ interface MailStore extends AppState {
   setScheduledCount: (count: number) => void;
   isSearching: boolean;
   setIsSearching: (isSearching: boolean) => void;
+
+  // Scheduler UI States (for AI Control)
+  showScheduler: boolean;
+  setShowScheduler: (show: boolean) => void;
+  scheduleTime: string;
+  setScheduleTime: (time: string) => void;
 }
 
 export const useMailStore = create<MailStore>((set) => ({
@@ -72,6 +78,8 @@ export const useMailStore = create<MailStore>((set) => ({
   resetComposeFields: () =>
     set({
       composeFields: { to: '', subject: '', body: '' },
+      showScheduler: false,
+      scheduleTime: ''
     }),
 
   // UI Actions
@@ -136,4 +144,10 @@ export const useMailStore = create<MailStore>((set) => ({
   },
   scheduledCount: 0,
   setScheduledCount: (count) => set({ scheduledCount: count }),
+
+  // Scheduler State Initialization
+  showScheduler: false,
+  setShowScheduler: (show) => set({ showScheduler: show }),
+  scheduleTime: '',
+  setScheduleTime: (time) => set({ scheduleTime: time }),
 }));

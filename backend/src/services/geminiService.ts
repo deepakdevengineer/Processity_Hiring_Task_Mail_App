@@ -242,9 +242,7 @@ export class GeminiService {
       const toEmail = emailMatch[1];
       const subject = GeminiService.extractSubject(userMessage);
       const body = GeminiService.extractBody(userMessage);
-      
-      // Default to 1 hour in future for testing
-      const scheduledAt = new Date(Date.now() + 3600 * 1000).toISOString();
+      const scheduledAt = GeminiService.extractScheduleTime(userMessage);
       
       return {
         reasoning: 'Fallback: Schedule email command parsed.',
@@ -252,7 +250,7 @@ export class GeminiService {
           { type: 'navigate', view: 'compose' },
           { type: 'fillForm', formId: 'composeForm', fields: { to: toEmail, subject, body } },
           { type: 'schedule', to: toEmail, subject, body, scheduledAt },
-          { type: 'message', text: `Drafting and scheduling email to ${toEmail} with subject: "${subject}"` }
+          { type: 'message', text: `Drafting scheduled email to ${toEmail} with subject: "${subject}"` }
         ]
       };
     }
@@ -666,5 +664,43 @@ Body: ${body}`;
     }
     
     return bodyContent.trim();
+  }
+
+  /**
+   * Helper to extract relative/exact scheduled time from natural language commands
+   */
+  private static extractScheduleTime(msg: string): string {
+    const timeMatch = msg.match(/at\s+(\d{1,2})[.:](\d{2})\s*(pm|am)?/i);
+    const date = new Date();
+    
+    if (timeMatch) {
+      let hours = parseInt(timeMatch[1], 10);
+      const minutes = parseInt(timeMatch[2], 10);
+      const ampm = timeMatch[3]?.toLowerCase();
+      
+      if (ampm === 'pm' && hours < 12) hours += 12;
+      if (ampm === 'am' && hours === 12) hours = 0;
+      
+      date.setHours(hours, minutes, 0, 0);
+      
+      // If the time has already passed today, assume they mean tomorrow
+      if (date <= new Date()) {
+        date.setDate(date.getDate() + 1);
+      }
+      return date.toISOString();
+    }
+    
+    // Check for "in X hours" or "in X minutes"
+    const inHoursMatch = msg.match(/in\s+(\d+)\s+hour/i);
+    if (inHoursMatch) {
+      return new Date(Date.now() + parseInt(inHoursMatch[1], 10) * 3600 * 1000).toISOString();
+    }
+    const inMinsMatch = msg.match(/in\s+(\d+)\s+min/i);
+    if (inMinsMatch) {
+      return new Date(Date.now() + parseInt(inMinsMatch[1], 10) * 60 * 1000).toISOString();
+    }
+    
+    // Default to 1 hour from now
+    return new Date(Date.now() + 3600 * 1000).toISOString();
   }
 }

@@ -1,5 +1,4 @@
-// frontend/src/components/ComposeModal.tsx
-import React, { useState } from 'react';
+import React from 'react';
 import { useMailStore } from '../store/mailStore';
 import { emailAPI } from '../api/client';
 import { Send, Trash2, X, Clock } from 'lucide-react';
@@ -12,11 +11,12 @@ export const ComposeModal: React.FC = () => {
     setError,
     composeFields,
     setComposeFields,
-    resetComposeFields
+    resetComposeFields,
+    showScheduler,
+    setShowScheduler,
+    scheduleTime,
+    setScheduleTime
   } = useMailStore();
-
-  const [showScheduler, setShowScheduler] = useState(false);
-  const [scheduleTime, setScheduleTime] = useState('');
 
   const handleSend = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();

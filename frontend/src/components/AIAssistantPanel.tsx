@@ -255,10 +255,32 @@ export const AIAssistantPanel: React.FC = () => {
           case 'schedule':
             if (action.to && action.subject && action.body && action.scheduledAt) {
               try {
-                await emailAPI.schedule(action.to, action.subject, action.body, action.scheduledAt);
-                store.setCurrentView('inbox');
+                // 1. Fill fields in compose form
+                store.setComposeFields({
+                  to: extractEmailAddress(action.to),
+                  subject: action.subject,
+                  body: action.body
+                });
+                
+                // 2. Open scheduler panel in store
+                store.setShowScheduler(true);
+                
+                // 3. Format ISO string (UTC) to local datetime-local format ("YYYY-MM-DDTHH:mm")
+                const parsedDate = new Date(action.scheduledAt);
+                const tzOffset = parsedDate.getTimezoneOffset() * 60000;
+                const localISOTime = new Date(parsedDate.getTime() - tzOffset).toISOString().slice(0, 16);
+                store.setScheduleTime(localISOTime);
+                
+                // 4. Navigate to compose view
+                store.setCurrentView('compose');
+                
+                // 5. Output chat notification
+                setMessages(prev => [...prev, {
+                  role: 'assistant',
+                  content: `⏰ Ready to schedule. I have drafted the email to ${action.to} and prepared the scheduler to send at ${parsedDate.toLocaleString()}. Review and click "Schedule Send" to queue it.`
+                }]);
               } catch (err) {
-                console.error('Scheduling failed:', err);
+                console.error('Failed to prepare scheduled email draft:', err);
               }
             }
             break;
