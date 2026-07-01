@@ -79,9 +79,13 @@ export const useMailStore = create<MailStore>((set) => ({
   setCurrentEmail: (email) => set({ currentEmail: email }),
   setEmails: (emails) => {
     const stack = new Error().stack;
+    const token = localStorage.getItem('auth_token');
     fetch('http://localhost:3001/api/ai/log', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': token ? `Bearer ${token}` : ''
+      },
       body: JSON.stringify({ event: 'setEmails', count: emails.length, stack })
     }).catch(() => {});
     set({ emails });
@@ -92,9 +96,13 @@ export const useMailStore = create<MailStore>((set) => ({
   setUnreadCount: (count) => set({ unreadCount: count }),
   setIsSearching: (isSearching) => {
     const stack = new Error().stack;
+    const token = localStorage.getItem('auth_token');
     fetch('http://localhost:3001/api/ai/log', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': token ? `Bearer ${token}` : ''
+      },
       body: JSON.stringify({ event: 'setIsSearching', value: isSearching, stack })
     }).catch(() => {});
     set({ isSearching });
