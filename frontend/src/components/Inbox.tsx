@@ -127,6 +127,9 @@ export const Inbox: React.FC<EmailListProps> = ({ isSent = false, isScheduled = 
     setFilterKeyword('');
     setSearchQuery('');
     
+    // Clear emails immediately so user gets instant loading skeleton feedback
+    setEmails([]);
+    
     // Allow React state updates to flush first before resetting isSearching flag
     setTimeout(() => {
       const store = useMailStore.getState();
