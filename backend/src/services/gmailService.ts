@@ -226,11 +226,10 @@ export class GmailService {
   async listInbox(limit = 20, pageToken?: string): Promise<{ emails: Email[]; nextPageToken?: string }> {
     if (this.isSandboxMode) {
       if (this.isSmtpMode) {
-        try {
-          await this.syncImapEmails('INBOX', limit);
-        } catch (err) {
-          console.error('Failed to sync IMAP inbox:', err);
-        }
+        // Sync IMAP in background asynchronously so listInbox returns instantly
+        this.syncImapEmails('INBOX', limit).catch(err => {
+          console.error('Failed to sync IMAP inbox in background:', err);
+        });
       }
 
       try {
@@ -280,11 +279,10 @@ export class GmailService {
   async listSent(limit = 20, pageToken?: string): Promise<{ emails: Email[]; nextPageToken?: string }> {
     if (this.isSandboxMode) {
       if (this.isSmtpMode) {
-        try {
-          await this.syncImapEmails('SENT', limit);
-        } catch (err) {
-          console.error('Failed to sync IMAP sent:', err);
-        }
+        // Sync IMAP in background asynchronously so listSent returns instantly
+        this.syncImapEmails('SENT', limit).catch(err => {
+          console.error('Failed to sync IMAP sent in background:', err);
+        });
       }
 
       try {

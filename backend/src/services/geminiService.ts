@@ -68,8 +68,8 @@ export class GeminiService {
       } catch (error) {
         const status = axios.isAxiosError(error) ? error.response?.status : null;
 
-        // Retry on 503 (overloaded) or 429 (rate limit)
-        if ((status === 503 || status === 429) && attempt < MAX_RETRIES) {
+        // Retry on 503 (overloaded) but immediately fall back on 429 (rate limits) to keep response instant
+        if (status === 503 && attempt < MAX_RETRIES) {
           const delay = attempt * 2000; // 2s, 4s backoff
           console.warn(`[Gemini] Got ${status}, retrying in ${delay}ms (attempt ${attempt}/${MAX_RETRIES})...`);
           await new Promise(resolve => setTimeout(resolve, delay));
