@@ -54,10 +54,10 @@ export const MainApp: React.FC = () => {
     const pollEmails = async () => {
       try {
         const store = useMailStore.getState();
-        // 1. Fetch inbox emails
         const response = await emailAPI.getInbox(20);
         const inboxEmails = response.data.data || [];
-        if (currentView === 'inbox' && !store.isSearching) {
+        const freshStore = useMailStore.getState();
+        if (currentView === 'inbox' && !freshStore.isSearching) {
           setEmails(inboxEmails);
         }
         
