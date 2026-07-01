@@ -108,9 +108,11 @@ export const MainApp: React.FC = () => {
           }
           setAutopilotProcessing(false);
           // Refresh inbox list after replies are sent
-          const updatedRes = await emailAPI.getInbox(20);
-          setEmails(updatedRes.data.data || []);
-          setUnreadCount((updatedRes.data.data || []).filter((e: any) => !e.is_read).length);
+          if (!store.isSearching) {
+            const updatedRes = await emailAPI.getInbox(20);
+            setEmails(updatedRes.data.data || []);
+            setUnreadCount((updatedRes.data.data || []).filter((e: any) => !e.is_read).length);
+          }
         }
       } catch (err) {
         console.error('Error polling inbox:', err);

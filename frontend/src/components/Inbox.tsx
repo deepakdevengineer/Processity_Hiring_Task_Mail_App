@@ -213,13 +213,33 @@ export const Inbox: React.FC<EmailListProps> = ({ isSent = false, isScheduled = 
         gap: '12px',
         background: 'var(--bg-secondary)'
       }}>
-        <div>
-          <h2 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)' }}>
-            {isScheduled ? 'Scheduled Queue' : isSent ? 'Sent' : 'Inbox'}
-          </h2>
-          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-            {emails.length} message{emails.length !== 1 ? 's' : ''}
-          </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div>
+            <h2 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)' }}>
+              {isScheduled ? 'Scheduled Queue' : isSent ? 'Sent' : isSearching ? 'Search Results' : 'Inbox'}
+            </h2>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+              {emails.length} message{emails.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+          {isSearching && !isScheduled && !isSent && (
+            <button
+              onClick={handleClearFilters}
+              className="btn-primary fade-in"
+              style={{
+                padding: '6px 12px',
+                fontSize: '11px',
+                height: '28px',
+                borderRadius: 'var(--radius-sm)',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+            >
+              Back to Inbox
+            </button>
+          )}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
