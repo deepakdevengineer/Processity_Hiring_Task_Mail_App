@@ -126,9 +126,13 @@ export const Inbox: React.FC<EmailListProps> = ({ isSent = false, isScheduled = 
     setFilterSender('');
     setFilterKeyword('');
     setSearchQuery('');
-    const store = useMailStore.getState();
-    store.setFilters({});
-    store.setIsSearching(false);
+    
+    // Allow React state updates to flush first before resetting isSearching flag
+    setTimeout(() => {
+      const store = useMailStore.getState();
+      store.setFilters({});
+      store.setIsSearching(false);
+    }, 50);
   };
 
   const handleEmailClick = async (emailId: string) => {
