@@ -439,54 +439,84 @@ export class GmailService {
   async searchEmails(query: string, filters?: EmailFilters, limit = 20): Promise<Email[]> {
     if (this.isSandboxMode) {
       try {
+        console.log('[searchEmails] Incoming filters:', JSON.stringify(filters), 'query:', query);
         let sql = 'SELECT * FROM emails WHERE user_id = $1';
         const params: any[] = [this.sandboxUserId];
         let paramIdx = 2;
 
-        if (filters?.isRead !== undefined) {
-          const isReadBool = typeof filters.isRead === 'string'
-            ? filters.isRead === 'true'
-            : !!filters.isRead;
+        let queryIsRead: boolean | undefined = undefined;
+        let querySender: string | undefined = undefined;
+        let queryKeyword: string | undefined = undefined;
+
+        if (query) {
+          // Parse "is:unread" or "is:read"
+          if (/is:unread\b/i.test(query)) {
+            queryIsRead = false;
+          } else if (/is:read\b/i.test(query)) {
+            queryIsRead = true;
+          }
+
+          // Parse "from:email" or "from:name"
+          const fromMatch = query.match(/from:([^\s'"]+|'[^']+'|"[^"]+")/i);
+          if (fromMatch) {
+            querySender = fromMatch[1].replace(/^['"]|['"]$/g, '');
+          }
+
+          // Parse "subject:xxx" or "about:xxx"
+          const subjectMatch = query.match(/(?:subject|about):([^\s'"]+|'[^']+'|"[^"]+")/i);
+          if (subjectMatch) {
+            queryKeyword = subjectMatch[1].replace(/^['"]|['"]$/g, '');
+          }
+
+          // Clean up the query: strip all parsed operators to get the raw search keyword
+          let cleanKeyword = query
+            .replace(/[a-zA-Z]+:(?:[^\s'"]+|'[^']+'|"[^"]+")/gi, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+          if (cleanKeyword) {
+            queryKeyword = cleanKeyword;
+          }
+        }
+
+        // Apply final consolidated filters (merging query filters and explicit action.filters)
+        const finalIsRead = filters?.isRead !== undefined ? filters.isRead : queryIsRead;
+        const finalSender = filters?.sender || querySender;
+        const finalKeyword = filters?.keyword || queryKeyword;
+        
+        let finalDays = undefined;
+        if (filters?.dateRange) {
+          const match = filters.dateRange.match(/^(\d+)d$/);
+          if (match) finalDays = parseInt(match[1]);
+        }
+
+        // Bind consolidated filters to SQL
+        if (finalIsRead !== undefined) {
+          const isReadBool = typeof finalIsRead === 'string' ? finalIsRead === 'true' : !!finalIsRead;
           sql += ` AND is_read = $${paramIdx++}`;
           params.push(isReadBool);
         }
 
-        if (filters?.dateRange) {
-          const match = filters.dateRange.match(/^(\d+)d$/);
-          if (match) {
-            const days = parseInt(match[1]);
-            sql += ` AND date >= NOW() - CAST($${paramIdx++} AS INTERVAL)`;
-            params.push(`${days} days`);
-          }
+        if (finalDays !== undefined) {
+          sql += ` AND date >= NOW() - CAST($${paramIdx++} AS INTERVAL)`;
+          params.push(`${finalDays} days`);
         }
 
-        if (filters?.sender) {
+        if (finalSender) {
           sql += ` AND from_address ILIKE $${paramIdx++}`;
-          params.push(`%${filters.sender}%`);
+          params.push(`%${finalSender}%`);
         }
 
-        if (filters?.keyword) {
-          sql += ` AND (subject ILIKE $${paramIdx} OR body ILIKE $${paramIdx})`;
+        if (finalKeyword) {
+          sql += ` AND (subject ILIKE $${paramIdx} OR body ILIKE $${paramIdx} OR from_address ILIKE $${paramIdx})`;
           paramIdx++;
-          params.push(`%${filters.keyword}%`);
-        }
-
-        if (query && query.trim() !== 'is:inbox') {
-          const cleanQuery = query.trim();
-          if (cleanQuery.toLowerCase() === 'is:unread') {
-            sql += ` AND is_read = false`;
-          } else if (cleanQuery.toLowerCase() === 'is:read') {
-            sql += ` AND is_read = true`;
-          } else {
-            sql += ` AND (subject ILIKE $${paramIdx} OR body ILIKE $${paramIdx} OR from_address ILIKE $${paramIdx})`;
-            paramIdx++;
-            params.push(`%${cleanQuery}%`);
-          }
+          params.push(`%${finalKeyword}%`);
         }
 
         sql += ` ORDER BY date DESC LIMIT $${paramIdx}`;
         params.push(limit);
 
+        console.log('[searchEmails] Executing SQL:', sql, 'Params:', JSON.stringify(params));
         const result = await pool.query(sql, params);
         return result.rows.map(row => ({
           ...row,
