@@ -104,8 +104,48 @@ export class GeminiService {
     const msg = userMessage.toLowerCase().trim();
     const emailMatch = userMessage.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i);
     
-    // 1. Forward email: "forward the recent email to dk78834@gmail.com", "forward this email to boss@company.com"
-    if (msg.includes('forward') && emailMatch) {
+    // 1. Navigation Commands: "go to inbox", "show sent", "open compose"
+    if (msg.includes('go to') || msg.includes('show folder') || msg.includes('open view') || msg.startsWith('compose') || msg.startsWith('write') || msg.includes('folder') || msg === 'inbox' || msg === 'sent' || msg === 'scheduled') {
+      if (msg.includes('sent')) {
+        return {
+          reasoning: 'Fallback: Navigation to Sent view.',
+          actions: [
+            { type: 'navigate', view: 'sent' },
+            { type: 'message', text: 'Navigated to Sent Mail.' }
+          ]
+        };
+      }
+      if (msg.includes('schedul') || msg.includes('pending')) {
+        return {
+          reasoning: 'Fallback: Navigation to Scheduled view.',
+          actions: [
+            { type: 'navigate', view: 'scheduled' },
+            { type: 'message', text: 'Navigated to Scheduled Mail.' }
+          ]
+        };
+      }
+      if (msg.includes('inbox')) {
+        return {
+          reasoning: 'Fallback: Navigation to Inbox view.',
+          actions: [
+            { type: 'navigate', view: 'inbox' },
+            { type: 'message', text: 'Navigated to Inbox.' }
+          ]
+        };
+      }
+      if (msg.includes('compose') || msg.includes('write') || msg.includes('create') || msg.includes('new message')) {
+        return {
+          reasoning: 'Fallback: Navigation to Compose view.',
+          actions: [
+            { type: 'navigate', view: 'compose' },
+            { type: 'message', text: 'Opened compose window.' }
+          ]
+        };
+      }
+    }
+
+    // 2. Forward email: "forward the recent email to dk78834@gmail.com", "forward this email to boss@company.com"
+    if ((msg.includes('forward') || msg.includes('fwd') || msg.includes('share this')) && emailMatch) {
       const toEmail = emailMatch[1];
       const isRecent = msg.includes('recent') || msg.includes('latest') || msg.includes('last') || !appState.currentEmail;
       
@@ -122,17 +162,27 @@ export class GeminiService {
       };
     }
     
-    // 2. Reply to email: "reply to the recent email saying...", "reply to this saying..."
-    if (msg.includes('reply')) {
-      const replyText = userMessage.match(/(saying|with)[:\s]+['"]?([^'"]+)['"]?/i)?.[2] || 'Thanks for the email.';
+    // 3. Reply to email: "reply to the recent email saying...", "reply to this saying...", "answer with Got it"
+    if (msg.includes('reply') || msg.includes('answer') || msg.includes('respond') || msg.includes('write back')) {
       const isRecent = msg.includes('recent') || msg.includes('latest') || msg.includes('last') || !appState.currentEmail;
+      const targetEmail = isRecent ? appState.emails[0] : appState.currentEmail;
+      
+      let replyText = 'Thanks for the email.';
+      
+      const customSaying = userMessage.match(/(saying|with|response)[:\s]+['"]?([^'"]+)['"]?/i)?.[2] || 
+                           userMessage.match(/reply\s+['"]?([^'"]+?)['"]?$/i)?.[1];
+      if (customSaying && !customSaying.includes('to the') && !customSaying.includes('to this')) {
+        replyText = customSaying;
+      } else if (targetEmail) {
+        replyText = GeminiService.generateLocalContextualReply(targetEmail.subject, targetEmail.body);
+      }
       
       const actions: any[] = [];
       if (isRecent) {
         actions.push({ type: 'search', query: 'is:inbox', filters: {} });
       }
       actions.push({ type: 'reply', body: replyText });
-      actions.push({ type: 'message', text: `Drafting reply saying: "${replyText}"` });
+      actions.push({ type: 'message', text: `Drafting reply: "${replyText}"` });
       
       return {
         reasoning: 'Fallback: Reply command detected.',
@@ -140,8 +190,8 @@ export class GeminiService {
       };
     }
 
-    // 3. Delete email: "delete the recent email", "delete this email"
-    if (msg.includes('delete') || msg.includes('remove') || msg.includes('trash')) {
+    // 4. Delete email: "delete the recent email", "delete this email", "trash the open email", "remove this"
+    if (msg.includes('delete') || msg.includes('remove') || msg.includes('trash') || msg.includes('discard') || msg.includes('bin') || msg.includes('throw away')) {
       const isRecent = msg.includes('recent') || msg.includes('latest') || msg.includes('last') || !appState.currentEmail;
       
       const actions: any[] = [];
@@ -157,8 +207,44 @@ export class GeminiService {
       };
     }
 
-    // 4. Compose/Send email: "Send an email to john@example.com with subject 'Meeting' and body 'Let's meet'"
-    if (msg.includes('send') && msg.includes('email') && emailMatch) {
+    // 5. Mark Read/Unread: "mark as read", "mark the last email read", "mark this as seen"
+    if (msg.includes('mark') && (msg.includes('read') || msg.includes('seen'))) {
+      const isRecent = msg.includes('recent') || msg.includes('latest') || msg.includes('last') || !appState.currentEmail;
+      const targetEmailId = isRecent ? appState.emails[0]?.id : appState.currentEmail?.id;
+      
+      if (targetEmailId) {
+        return {
+          reasoning: 'Fallback: Mark email as read.',
+          actions: [
+            { type: 'markRead', emailId: targetEmailId },
+            { type: 'message', text: 'Email marked as read.' }
+          ]
+        };
+      }
+    }
+
+    // 6. Schedule email: "schedule an email to john@example.com at 5pm with subject 'meeting' and body 'hello'"
+    if (msg.includes('schedule') && msg.includes('email') && emailMatch) {
+      const toEmail = emailMatch[1];
+      const subject = userMessage.match(/subject\s+['"]?([^'"]+?)['"]?(\s+and|$)/i)?.[1] || 'No Subject';
+      const body = userMessage.match(/body\s+['"]?([^'"]+?)['"]?$/i)?.[1] || 'No Content';
+      
+      // Default to 1 hour in future for testing
+      const scheduledAt = new Date(Date.now() + 3600 * 1000).toISOString();
+      
+      return {
+        reasoning: 'Fallback: Schedule email command parsed.',
+        actions: [
+          { type: 'navigate', view: 'compose' },
+          { type: 'fillForm', formId: 'composeForm', fields: { to: toEmail, subject, body } },
+          { type: 'schedule', to: toEmail, subject, body, scheduledAt },
+          { type: 'message', text: `Drafting and scheduling email to ${toEmail} with subject: "${subject}"` }
+        ]
+      };
+    }
+
+    // 7. Compose/Send email: "Send an email to john@example.com with subject 'Meeting' and body 'Let's meet'"
+    if ((msg.includes('send') || msg.includes('compose') || msg.includes('write')) && msg.includes('email') && emailMatch) {
       const toEmail = emailMatch[1];
       const subject = userMessage.match(/subject\s+['"]?([^'"]+?)['"]?(\s+and|$)/i)?.[1] || 'No Subject';
       const body = userMessage.match(/body\s+['"]?([^'"]+?)['"]?$/i)?.[1] || 'No Content';
@@ -168,59 +254,104 @@ export class GeminiService {
         actions: [
           { type: 'navigate', view: 'compose' },
           { type: 'fillForm', formId: 'composeForm', fields: { to: toEmail, subject, body } },
-          { type: 'message', text: `Drafted email to ${toEmail} with subject: "${subject}"` }
+          { type: 'message', text: `Drafting email to ${toEmail} with subject: "${subject}"` }
         ]
       };
     }
 
-    // 5. Search date filters: "Show me emails from the last 10 days"
-    const lastDaysMatch = msg.match(/(emails|search|find|show).*last\s+(\d+)\s+days/i);
-    if (lastDaysMatch) {
-      const days = lastDaysMatch[2];
+    // 8. Unified Search & Filters: Handles "unread emails from this week", "emails from Sarah about storage", "sent emails yesterday", etc.
+    const isSearchCommand = msg.includes('show') || msg.includes('find') || msg.includes('search') || 
+                            msg.includes('list') || msg.includes('get') || msg.includes('unread') ||
+                            msg.includes('sent') || msg.includes('from') || msg.includes('about') || 
+                            msg.includes('yesterday') || msg.includes('today') || msg.includes('week') ||
+                            msg.includes('month');
+
+    const isExplicitOpen = msg.startsWith('open') || msg.startsWith('view') || msg.includes('open the') || msg.includes('open this');
+
+    if (isSearchCommand && !isExplicitOpen) {
+      // A. Detect read/unread status
+      let isRead: boolean | undefined = undefined;
+      if (msg.includes('unread')) {
+        isRead = false;
+      } else if (msg.includes(' read ')) {
+        isRead = true;
+      }
+
+      // B. Detect sent/replied folder vs inbox
+      let queryVal = 'is:inbox';
+      let messageLabel = 'emails';
+      if (msg.includes('sent') || msg.includes('replied to') || msg.includes('i sent') || msg.includes('i replied')) {
+        queryVal = 'is:sent';
+        messageLabel = 'sent/replied emails';
+      } else if (isRead === false) {
+        queryVal = 'is:unread';
+        messageLabel = 'unread emails';
+      }
+
+      // C. Detect date ranges
+      let dateRange: string | undefined = undefined;
+      const lastDaysMatch = msg.match(/last\s+(\d+)\s+days/i);
+      if (lastDaysMatch) {
+        dateRange = `${lastDaysMatch[1]}d`;
+      } else if (msg.includes('yesterday')) {
+        dateRange = '2d';
+      } else if (msg.includes('today')) {
+        dateRange = '1d';
+      } else if (msg.includes('week')) {
+        dateRange = '7d';
+      } else if (msg.includes('month')) {
+        dateRange = '30d';
+      }
+
+      // D. Extract sender (matches names with spaces and raw email addresses)
+      let sender: string | undefined = undefined;
+      const fromIndex = msg.indexOf('from ');
+      const byIndex = msg.indexOf('by ');
+      const fromStart = fromIndex !== -1 ? fromIndex + 5 : (byIndex !== -1 ? byIndex + 3 : -1);
+      if (fromStart !== -1) {
+        const rest = msg.substring(fromStart);
+        const boundaryMatch = rest.match(/^(.*?)\s+(about|regarding|between|on|subject|last|latest|this|yesterday|today)\b/i);
+        sender = (boundaryMatch ? boundaryMatch[1].trim() : rest.trim()).replace(/^["']|["']$/g, '');
+        const ignored = ['this', 'last', 'the', 'me', 'a', 'my', 'yesterday', 'today', 'week', 'month', 'year', 'emails', 'email'];
+        if (ignored.includes(sender.toLowerCase())) {
+          sender = undefined;
+        }
+      }
+
+      // E. Extract keyword/subject topic
+      let keyword: string | undefined = undefined;
+      const aboutIndex = msg.indexOf('about ');
+      const regardingIndex = msg.indexOf('regarding ');
+      const subjectIndex = msg.indexOf('subject ');
+      const keywordStart = aboutIndex !== -1 ? aboutIndex + 6 : 
+                           (regardingIndex !== -1 ? regardingIndex + 10 : 
+                           (subjectIndex !== -1 ? subjectIndex + 8 : -1));
+      if (keywordStart !== -1) {
+        const rest = msg.substring(keywordStart);
+        const boundaryMatch = rest.match(/^(.*?)\s+(from|by|between|on|last|latest|this|yesterday|today)\b/i);
+        keyword = (boundaryMatch ? boundaryMatch[1].trim() : rest.trim()).replace(/^["']|["']$/g, '');
+      }
+
+      // F. Construct user-facing description
+      let descriptionText = `Showing ${messageLabel}`;
+      if (sender) descriptionText += ` from "${sender}"`;
+      if (keyword) descriptionText += ` about "${keyword}"`;
+      if (dateRange) {
+        const days = dateRange.replace('d', '');
+        descriptionText += ` from the last ${days === '1' ? 'day' : days + ' days'}`;
+      }
+      descriptionText += '.';
+
       return {
-        reasoning: `Fallback: Filter emails from last ${days} days.`,
+        reasoning: 'Fallback: Search command parsed.',
         actions: [
-          { type: 'search', query: 'is:inbox', filters: { dateRange: `${days}d` } },
-          { type: 'message', text: `Filtered emails from the last ${days} days.` }
+          { type: 'search', query: queryVal, filters: { isRead, dateRange, sender, keyword } },
+          { type: 'message', text: descriptionText }
         ]
       };
     }
 
-    // 6. Unread status filters: "Show only unread emails from this week"
-    if (msg.includes('unread')) {
-      const dateRange = msg.includes('week') ? '7d' : undefined;
-      return {
-        reasoning: 'Fallback: Filter by unread status.',
-        actions: [
-          { type: 'search', query: 'is:unread', filters: { isRead: false, dateRange } },
-          { type: 'message', text: 'Showing unread emails.' }
-        ]
-      };
-    }
-
-    // 7. Search sender/keyword: "Find the email from Sarah about the project update"
-    const senderMatch = msg.match(/(from|by)\s+(\w+)/i);
-    const keywordMatch = msg.match(/(about|regarding)\s+([\w\s]+)/i);
-    
-    let sender = senderMatch ? senderMatch[2] : undefined;
-    const ignoredSenders = ['this', 'last', 'the', 'me', 'a', 'my', 'yesterday', 'today', 'week', 'month', 'year', 'emails', 'email'];
-    if (sender && ignoredSenders.includes(sender.toLowerCase())) {
-      sender = undefined;
-    }
-
-    const keyword = keywordMatch ? keywordMatch[2].trim() : undefined;
-
-    if (sender || keyword) {
-      return {
-        reasoning: 'Fallback: Search filter applied.',
-        actions: [
-          { type: 'search', query: 'is:inbox', filters: { sender, keyword } },
-          { type: 'message', text: `Searching for emails${sender ? ` from ${sender}` : ''}${keyword ? ` about "${keyword}"` : ''}.` }
-        ]
-      };
-    }
-
-    // 8. Open latest/recent email: "Open the latest email from David", "open the recent email"
+    // 9. Open latest/recent email: "Open the latest email from David", "open the recent email"
     if (msg.includes('open') || msg.includes('view') || msg.includes('show')) {
       const fromDavid = userMessage.match(/(from|by)\s+(\w+)/i)?.[2] || '';
       return {
@@ -236,7 +367,7 @@ export class GeminiService {
     return {
       reasoning: 'Fallback: Simple message response.',
       actions: [
-        { type: 'message', text: `Connection to Gemini is limited (Rate limit 429). Please try typing direct commands like "send email to...", "reply to this", or "unread emails".` }
+        { type: 'message', text: `Command not fully recognized. Connection to Gemini is limited (Rate limit 429). Please try direct commands like "send email to...", "reply to this", or "unread emails".` }
       ]
     };
   }
@@ -416,5 +547,41 @@ Body: ${body}`;
         { label: 'Politely decline', prompt: 'Reply to this email saying: Thank you for reaching out, but I am unable to proceed with this.' }
       ];
     }
+  }
+
+  /**
+   * Generates a context-aware draft reply locally when Gemini is rate-limited
+   */
+  private static generateLocalContextualReply(subject: string, body: string): string {
+    const sub = (subject || '').toLowerCase();
+    const content = (body || '').toLowerCase();
+
+    if (sub.includes('storage') || sub.includes('space') || content.includes('storage') || content.includes('full')) {
+      return "Thank you for the notification regarding the Google Account storage limit. I will review my Gmail storage and clean up unnecessary files to free up space.";
+    }
+    
+    if (sub.includes('failure') || sub.includes('failed') || sub.includes('delivery status') || sub.includes('undelivered')) {
+      return "I have received the delivery failure notice. I will check the recipient's email address for any typos and attempt to resend the message.";
+    }
+
+    if (sub.includes('security') || sub.includes('alert') || sub.includes('sign-in')) {
+      return "Thank you for the security alert. I have checked the sign-in details and verified that this was an authorized activity.";
+    }
+
+    if (sub.includes('meeting') || sub.includes('schedule') || sub.includes('call') || sub.includes('zoom')) {
+      return "Thank you for the invitation. I have checked my calendar, noted the meeting details, and will join at the scheduled time.";
+    }
+
+    if (sub.includes('newsletter') || sub.includes('weekly') || sub.includes('digest') || sub.includes('codepen') || sub.includes('update')) {
+      return "Thank you for sharing the latest update. I will check out the details and let you know if I have any questions.";
+    }
+
+    // Dynamic fallback using the subject
+    const cleanSubject = (subject || '').replace(/^re:\s*/i, '').trim();
+    if (cleanSubject && cleanSubject !== '(no subject)') {
+      return `Thank you for your email regarding "${cleanSubject}". I have received your message and will review the details to get back to you as soon as possible.`;
+    }
+
+    return "Thank you for your email. I have received it and will review the details to get back to you shortly.";
   }
 }

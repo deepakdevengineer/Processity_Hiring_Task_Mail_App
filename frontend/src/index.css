@@ -274,10 +274,14 @@ h1, h2, h3, h4, h5, h6 {
 /* ─── HTML Email Body Isolation ──────────────────── */
 .email-html-body {
   width: 100%;
+  max-width: 100%;
   overflow-x: auto;
+  overflow-y: visible;
   color: var(--text-primary);
   font-size: 14px;
   line-height: 1.6;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .email-html-body * {
@@ -285,10 +289,20 @@ h1, h2, h3, h4, h5, h6 {
   box-sizing: border-box !important;
 }
 
+/* Force all fixed-width containers to be fluid */
+.email-html-body div,
+.email-html-body section,
+.email-html-body article,
+.email-html-body center {
+  width: auto !important;
+  min-width: 0 !important;
+}
+
 .email-html-body div,
 .email-html-body p,
 .email-html-body span,
 .email-html-body td,
+.email-html-body th,
 .email-html-body font,
 .email-html-body h1,
 .email-html-body h2,
@@ -306,11 +320,38 @@ h1, h2, h3, h4, h5, h6 {
 .email-html-body img {
   height: auto !important;
   max-width: 100% !important;
+  width: auto !important;
+  display: inline-block;
 }
 
 .email-html-body table {
   width: 100% !important;
   max-width: 100% !important;
+  min-width: 0 !important;
   border-spacing: 0;
   border-collapse: collapse;
+  table-layout: fixed !important;
 }
+
+.email-html-body td,
+.email-html-body th {
+  width: auto !important;
+  min-width: 0 !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+}
+
+/* Override any inline fixed pixel widths on wrappers */
+.email-html-body [style*="width"] {
+  width: auto !important;
+  max-width: 100% !important;
+}
+
+/* Prevent horizontal scrolling from wide content */
+.email-html-body pre,
+.email-html-body code {
+  white-space: pre-wrap !important;
+  word-break: break-all !important;
+}
+

@@ -23,6 +23,13 @@ const stripHtml = (html: string): string => {
     .trim();
 };
 
+// Extract raw email address from formatted string (e.g. "Name" <email@domain.com>)
+const extractEmailAddress = (addr: string): string => {
+  if (!addr) return '';
+  const match = addr.match(/<(.+?)>/);
+  return match ? match[1].trim() : addr.trim();
+};
+
 interface AISuggestion {
   label: string;
   prompt: string;
@@ -139,7 +146,7 @@ export const EmailDetail: React.FC = () => {
     const replyBody = `\n\n\nOn ${formattedDate}, ${currentEmail.from_address} wrote:\n> ${plainBody.split('\n').join('\n> ')}`;
     
     setComposeFields({
-      to: currentEmail.from_address,
+      to: extractEmailAddress(currentEmail.from_address),
       subject: currentEmail.subject.startsWith('Re:') ? currentEmail.subject : `Re: ${currentEmail.subject}`,
       body: replyBody
     });
@@ -151,7 +158,7 @@ export const EmailDetail: React.FC = () => {
     const formattedDate = new Date(currentEmail.date).toLocaleString();
     const allRecipients = [currentEmail.from_address, ...currentEmail.to_addresses].filter(
       (addr, i, arr) => arr.indexOf(addr) === i
-    ).join(', ');
+    ).map(extractEmailAddress).join(', ');
     const replyBody = `\n\n\nOn ${formattedDate}, ${currentEmail.from_address} wrote:\n> ${plainBody.split('\n').join('\n> ')}`;
     
     setComposeFields({

@@ -12,6 +12,13 @@ interface Message {
   actions?: AIAction[];
 }
 
+// Extract raw email address from formatted string (e.g. "Name" <email@domain.com>)
+const extractEmailAddress = (addr: string): string => {
+  if (!addr) return '';
+  const match = addr.match(/<(.+?)>/);
+  return match ? match[1].trim() : addr.trim();
+};
+
 export const AIAssistantPanel: React.FC = () => {
   const mailStore = useMailStore();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -54,9 +61,18 @@ export const AIAssistantPanel: React.FC = () => {
       const response = await aiAPI.execute(userMessage, appState, mailStore.composeFields);
       const data = response.data.data;
       
+      // Extract user-friendly message from actions if available
+      const messageAction = data.actions?.find((a: any) => a.type === 'message');
+      let displayContent = messageAction?.text || data.reasoning || 'Done.';
+      
+      // Clean up fallback/internal prefixes if displaying reasoning
+      if (!messageAction && displayContent.startsWith('Fallback:')) {
+        displayContent = displayContent.replace(/^Fallback:\s*/i, '');
+      }
+      
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: data.reasoning || 'Done.',
+        content: displayContent,
         actions: data.actions
       }]);
 
@@ -91,7 +107,11 @@ export const AIAssistantPanel: React.FC = () => {
 
           case 'fillForm':
             if (action.formId === 'composeForm' && action.fields) {
-              store.setComposeFields(action.fields);
+              const fields = { ...action.fields };
+              if (fields.to) {
+                fields.to = extractEmailAddress(fields.to);
+              }
+              store.setComposeFields(fields);
             }
             store.setCurrentView('compose');
             break;
@@ -112,7 +132,12 @@ export const AIAssistantPanel: React.FC = () => {
               }
               
               const lowerMsg = userMessage.toLowerCase();
-              if ((lowerMsg.includes('open') || lowerMsg.includes('read') || lowerMsg.includes('show first') || lowerMsg.includes('last email') || lowerMsg.includes('latest email')) && action.results.length > 0) {
+              // Only auto-open if the command has an explicit action (open/read/view/reply/forward/delete)
+              // or specifies a single recent email but NOT listing plural emails or unreads.
+              const needsOpening = /\b(open|read|view|reply|forward|delete)\b/i.test(lowerMsg) || 
+                                   (/\b(last|latest|recent)\b/i.test(lowerMsg) && !/\b(emails|unread)\b/i.test(lowerMsg));
+              
+              if (needsOpening && action.results.length > 0) {
                 const firstEmail = action.results[0];
                 store.setCurrentEmail(firstEmail);
                 store.setCurrentView('detail');
@@ -130,34 +155,38 @@ export const AIAssistantPanel: React.FC = () => {
             break;
 
           case 'reply':
-            if (store.currentEmail) {
-              const email = store.currentEmail;
-              const plainBody = email.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-              const date = new Date(email.date).toLocaleString();
-              const replyBody = action.body || `\n\nOn ${date}, ${email.from_address} wrote:\n> ${plainBody.substring(0, 500)}`;
-              
-              store.setComposeFields({
-                to: email.from_address,
-                subject: email.subject.startsWith('Re:') ? email.subject : `Re: ${email.subject}`,
-                body: replyBody
-              });
-              store.setCurrentView('compose');
+            {
+              const email = store.currentEmail || store.emails[0] || (action as any).email;
+              if (email) {
+                const plainBody = email.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+                const date = new Date(email.date).toLocaleString();
+                const replyBody = action.body || `\n\nOn ${date}, ${email.from_address} wrote:\n> ${plainBody.substring(0, 500)}`;
+                
+                store.setComposeFields({
+                  to: extractEmailAddress(email.from_address),
+                  subject: email.subject.startsWith('Re:') ? email.subject : `Re: ${email.subject}`,
+                  body: replyBody
+                });
+                store.setCurrentView('compose');
+              }
             }
             break;
 
           case 'forward':
-            if (store.currentEmail) {
-              const email = store.currentEmail;
-              const plainBody = email.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-              const date = new Date(email.date).toLocaleString();
-              const fwdBody = `\n\n---------- Forwarded message ----------\nFrom: ${email.from_address}\nDate: ${date}\nSubject: ${email.subject}\n\n${plainBody.substring(0, 1000)}`;
-              
-              store.setComposeFields({
-                to: action.to || '',
-                subject: email.subject.startsWith('Fwd:') ? email.subject : `Fwd: ${email.subject}`,
-                body: fwdBody
-              });
-              store.setCurrentView('compose');
+            {
+              const email = store.currentEmail || store.emails[0] || (action as any).email;
+              if (email) {
+                const plainBody = email.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+                const date = new Date(email.date).toLocaleString();
+                const fwdBody = `\n\n---------- Forwarded message ----------\nFrom: ${email.from_address}\nDate: ${date}\nSubject: ${email.subject}\n\n${plainBody.substring(0, 1000)}`;
+                
+                store.setComposeFields({
+                  to: action.to || '',
+                  subject: email.subject.startsWith('Fwd:') ? email.subject : `Fwd: ${email.subject}`,
+                  body: fwdBody
+                });
+                store.setCurrentView('compose');
+              }
             }
             break;
 
@@ -191,15 +220,19 @@ export const AIAssistantPanel: React.FC = () => {
             break;
 
           case 'delete':
-            if (action.emailId || store.currentEmail?.id) {
-              const eid = action.emailId || store.currentEmail!.id;
-              try {
-                await emailAPI.delete(eid);
-                store.setEmails(store.emails.filter(e => e.id !== eid));
-                store.setCurrentEmail(null);
-                store.setCurrentView('inbox');
-              } catch (err) {
-                console.error('Delete failed:', err);
+            {
+              const eid = action.emailId || store.currentEmail?.id || store.emails[0]?.id;
+              if (eid) {
+                try {
+                  await emailAPI.delete(eid);
+                  store.setEmails(store.emails.filter(e => e.id !== eid));
+                  if (store.currentEmail?.id === eid) {
+                    store.setCurrentEmail(null);
+                  }
+                  store.setCurrentView('inbox');
+                } catch (err) {
+                  console.error('Delete failed:', err);
+                }
               }
             }
             break;
@@ -257,32 +290,109 @@ export const AIAssistantPanel: React.FC = () => {
     return (
       <div
         key={email.id}
-        onClick={() => {
-          const store = useMailStore.getState();
-          store.setCurrentEmail(email);
-          store.setCurrentView('detail');
-        }}
         style={{
           padding: '10px 12px',
           background: 'var(--bg-primary)',
           border: '1px solid var(--border)',
           borderRadius: 'var(--radius-md)',
-          cursor: 'pointer',
-          transition: 'all 0.15s ease',
-          marginBottom: '4px'
+          marginBottom: '6px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '6px'
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent-1)'; e.currentTarget.style.background = 'var(--bg-hover)'; }}
-        onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--bg-primary)'; }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '2px' }}>
-          <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>{senderName}</span>
-          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{timeAgo}</span>
+        <div 
+          onClick={() => {
+            const store = useMailStore.getState();
+            store.setCurrentEmail(email);
+            store.setCurrentView('detail');
+          }}
+          style={{ cursor: 'pointer' }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '2px' }}>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>{senderName}</span>
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{timeAgo}</span>
+          </div>
+          <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {email.subject || '(No Subject)'}
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {bodyPreview || '(No preview)'}
+          </div>
         </div>
-        <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {email.subject || '(No Subject)'}
-        </div>
-        <div style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {bodyPreview || '(No preview)'}
+        
+        {/* Quick action buttons row */}
+        <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid var(--border)', paddingTop: '6px' }}>
+          <button
+            onClick={() => {
+              const store = useMailStore.getState();
+              store.setCurrentEmail(email);
+              store.setCurrentView('detail');
+            }}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--accent-2)',
+              fontSize: '10px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              padding: '2px 4px'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text-primary)'}
+            onMouseLeave={(e) => e.currentTarget.style.color = 'var(--accent-2)'}
+          >
+            Open
+          </button>
+          <button
+            onClick={() => {
+              const store = useMailStore.getState();
+              store.setCurrentEmail(email);
+              store.setCurrentView('detail');
+              handleSendMessage('Reply to this email');
+            }}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--accent-2)',
+              fontSize: '10px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              padding: '2px 4px'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text-primary)'}
+            onMouseLeave={(e) => e.currentTarget.style.color = 'var(--accent-2)'}
+          >
+            Reply
+          </button>
+          <button
+            onClick={() => {
+              const store = useMailStore.getState();
+              store.setCurrentEmail(email);
+              const plainBody = email.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+              const date = new Date(email.date).toLocaleString();
+              const fwdBody = `\n\n---------- Forwarded message ----------\nFrom: ${email.from_address}\nDate: ${date}\nSubject: ${email.subject}\n\n${plainBody.substring(0, 1000)}`;
+              
+              store.setComposeFields({
+                to: '',
+                subject: email.subject.startsWith('Fwd:') ? email.subject : `Fwd: ${email.subject}`,
+                body: fwdBody
+              });
+              store.setCurrentView('compose');
+            }}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--accent-2)',
+              fontSize: '10px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              padding: '2px 4px'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text-primary)'}
+            onMouseLeave={(e) => e.currentTarget.style.color = 'var(--accent-2)'}
+          >
+            Forward
+          </button>
         </div>
       </div>
     );
@@ -378,7 +488,7 @@ export const AIAssistantPanel: React.FC = () => {
                 {suggestedCommands.map((cmd, idx) => (
                   <button
                     key={idx}
-                    onClick={() => setInput(cmd)}
+                    onClick={() => handleSendMessage(cmd)}
                     style={{
                       textAlign: 'left',
                       padding: '10px 12px',

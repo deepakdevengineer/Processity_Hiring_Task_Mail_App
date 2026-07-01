@@ -450,6 +450,15 @@ export class GmailService {
           params.push(filters.isRead);
         }
 
+        if (filters?.dateRange) {
+          const match = filters.dateRange.match(/^(\d+)d$/);
+          if (match) {
+            const days = parseInt(match[1]);
+            sql += ` AND date >= NOW() - CAST($${paramIdx++} AS INTERVAL)`;
+            params.push(`${days} days`);
+          }
+        }
+
         if (filters?.sender) {
           sql += ` AND from_address ILIKE $${paramIdx++}`;
           params.push(`%${filters.sender}%`);
